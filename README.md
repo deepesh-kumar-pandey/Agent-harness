@@ -14,14 +14,20 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 The Agent Harness is built around a **layered tool-execution architecture** that emphasizes separation of concerns and extensibility:
 
 ```
-Agent
-  ↓
+config.json
+    ↓
+Config Layer (Partially Implemented)
+    ↓
+Provider Layer (Planned)
+    ↓
+Agent (Planned)
+    ↓
 Orchestrator (Planned)
-  ↓
-Tool Registry
-  ↓
-Tool Interface
-  ↓
+    ↓
+Tool Registry (Implemented)
+    ↓
+Tool Interface (Implemented)
+    ↓
 Concrete Tools
   ├── Calculator (Implemented)
   ├── Shell (Planned)
@@ -30,7 +36,44 @@ Concrete Tools
 
 ### Architecture Layers and Responsibilities
 
-#### 1. Agent (Planned)
+#### 1. Config Layer (Partially Implemented)
+- Manages application and provider configuration.
+- Stores configuration data in JSON format (`config.json`).
+- Does NOT make API calls or interact with external services.
+- Provides configuration settings that will be consumed by the Provider layer.
+- **Implemented**: `config.json` with provider configuration structure.
+- **Planned**: `config.go` to define Go configuration structures and loading logic.
+- **Configuration includes**:
+  - Provider name (e.g., "ollama")
+  - Model name (e.g., "llama3.1")
+  - Base URL for the provider (e.g., "http://localhost:11434")
+  - API endpoint (e.g., "/api/chat")
+
+**Configuration File** (`config.json`):
+```json
+{
+  "provider": {
+    "name": "ollama",
+    "model": "llama3.1",
+    "base_url": "http://localhost:11434",
+    "endpoint": "/api/chat"
+  }
+}
+```
+
+**Planned Methods** (in `config.go`):
+- **`LoadConfig(path string) (*Config, error)`** - Load configuration from `config.json`
+- **`GetProvider() *ProviderConfig`** - Retrieve provider configuration
+- **`Validate() error`** - Validate configuration structure and required fields
+
+#### 2. Provider Layer (Planned)
+- Manages connections to LLM providers (e.g., Ollama, OpenAI, etc.).
+- Uses configuration from the Config Layer to establish connections.
+- Responsible for sending requests to and receiving responses from external LLM providers.
+- Acts as the bridge between the Agent and external AI services.
+- **Status**: Planned for future implementation.
+
+#### 3. Agent (Planned)
 - Represents the high-level AI agent interface.
 - Determines what tasks need to be accomplished based on user instructions.
 - **Does NOT** directly implement or manage individual tools.

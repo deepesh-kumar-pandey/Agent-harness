@@ -1,0 +1,8 @@
+{
+  "provider": {
+    "name": "ollama",
+    "model": "llama3.1",
+    "base_url": "http://localhost:11434",
+    "endpoint": "/api/chat"
+  }
+}
