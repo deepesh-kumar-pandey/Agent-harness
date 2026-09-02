@@ -28,3 +28,26 @@ func (tr *ToolRegistry) Get(name string) (Tool, error) {
 	}
 	return tool, nil
 }
+
+func (tr *ToolRegistry) Has(name string) bool {
+	_, exists := tr.tools[name]
+	return exists
+}
+
+func (tr *ToolRegistry) List() []string {
+	toolNames := make([]string, 0, len(tr.tools))
+	for name := range tr.tools {
+		toolNames = append(toolNames, name)
+	}
+	return toolNames
+}
+
+func (tr *ToolRegistry) Remove(name string) error {
+	_, exists := tr.tools[name]
+
+	if !exists {
+		return fmt.Errorf("tool %q not found", name)
+	}
+	delete(tr.tools, name)
+	return nil
+}
