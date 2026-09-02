@@ -14,9 +14,9 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 The Agent Harness is built around a **layered tool-execution architecture** that emphasizes separation of concerns and extensibility:
 
 ```
-config.json
+config/config.json
     ↓
-Config Layer (Partially Implemented)
+Config Layer (Implemented)
     ↓
 Provider Layer (Planned)
     ↓
@@ -36,20 +36,20 @@ Concrete Tools
 
 ### Architecture Layers and Responsibilities
 
-#### 1. Config Layer (Partially Implemented)
+#### 1. Config Layer (Implemented)
 - Manages application and provider configuration.
-- Stores configuration data in JSON format (`config.json`).
+- Stores configuration data in JSON format in the `config/` folder.
 - Does NOT make API calls or interact with external services.
 - Provides configuration settings that will be consumed by the Provider layer.
-- **Implemented**: `config.json` with provider configuration structure.
-- **Planned**: `config.go` to define Go configuration structures and loading logic.
+- **Implemented**: `config/config.go` defines the configuration structures, loading logic, and validation.
+- **Tests**: `config/config_test.go` covers loading valid and missing files, plus required-field validation.
 - **Configuration includes**:
   - Provider name (e.g., "ollama")
   - Model name (e.g., "llama3.1")
   - Base URL for the provider (e.g., "http://localhost:11434")
   - API endpoint (e.g., "/api/chat")
 
-**Configuration File** (`config.json`):
+**Configuration File** (`config/config.json`):
 ```json
 {
   "provider": {
@@ -61,10 +61,15 @@ Concrete Tools
 }
 ```
 
-**Planned Methods** (in `config.go`):
-- **`LoadConfig(path string) (*Config, error)`** - Load configuration from `config.json`
-- **`GetProvider() *ProviderConfig`** - Retrieve provider configuration
-- **`Validate() error`** - Validate configuration structure and required fields
+**Config API** (in `config/config.go`):
+- **`Load(path string) (*Config, error)`** - Read, parse, and validate a JSON configuration file.
+- **`Validate() error`** - Validate the required provider fields: name, model, base URL, and endpoint.
+
+Run the config package tests from the repository root with:
+
+```bash
+go test -v ./config
+```
 
 #### 2. Provider Layer (Planned)
 - Manages connections to LLM providers (e.g., Ollama, OpenAI, etc.).
@@ -227,7 +232,9 @@ The Calculator is the first concrete tool implementation. It performs basic arit
 agent-harness/
 ├── cmd/                              (Planned: application entry points)
 ├── config/                           (Configuration layer)
-│   └── config.json                   (Provider configuration)
+│   ├── config.go                     (Configuration types, loading, and validation)
+│   ├── config.json                   (Provider configuration)
+│   └── config_test.go                (Configuration unit tests)
 ├── internal/
 │   ├── tools/                        (Tool implementation and management)
 │   │   ├── tools.go                  (Tool interface definition)
@@ -272,7 +279,7 @@ The `Tool` interface allows tools to be added and retrieved without type couplin
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| Config Layer | ✅ Partially Implemented | `config.json` exists with provider configuration; `config.go` (loading logic) planned |
+| Config Layer | ✅ Implemented | `config/config.go` loads and validates provider configuration from `config/config.json` |
 | Provider Layer | 🔄 Planned | Will handle LLM provider connections using config |
 | Tool Interface | ✅ Implemented | Defines `Name()`, `Description()`, `Execute()` |
 | Tool Registry | ✅ Implemented | Full CRUD operations: `Register`, `Get`, `Has`, `List`, `Remove` |
