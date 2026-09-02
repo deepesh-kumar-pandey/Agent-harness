@@ -80,7 +80,7 @@ Concrete Tools
 - Communicates with the Orchestrator to request task execution.
 - **Status**: Planned for future implementation.
 
-#### 2. Orchestrator (Planned)
+#### 4. Orchestrator (Planned)
 - Acts as the central coordinator of the agent workflow.
 - Receives the agent's requested action and analyzes what needs to be done.
 - Determines which registered tool should be used for the task.
@@ -90,7 +90,7 @@ Concrete Tools
 - **Key distinction**: The Orchestrator is responsible for **coordinating execution** and **workflow decisions**, while the Registry is only responsible for **managing tools**.
 - **Status**: Planned for future implementation.
 
-#### 3. Tool Registry (Implemented)
+#### 5. Tool Registry (Implemented)
 Maintains a centralized collection of available tools. It acts as the directory/lookup layer that allows the Orchestrator to find and retrieve tools by name.
 
 **Responsibilities**:
@@ -141,7 +141,7 @@ Maintains a centralized collection of available tools. It acts as the directory/
   - Error: Returns `fmt.Errorf("tool %q not found", name)` if the tool is not registered.
   - Usage: Used to deregister tools dynamically at runtime.
 
-#### 4. Tool Interface (Implemented)
+#### 6. Tool Interface (Implemented)
 Defines the common contract that all tools must implement. This allows the Registry and Orchestrator to work with any tool without coupling to concrete implementations.
 
 **Defined Interface** (`tools.go`):
@@ -170,7 +170,7 @@ type Tool interface {
   - Returns: The result of the operation, or an error if execution fails.
   - Usage: Called by the Orchestrator to perform the requested task.
 
-#### 5. Concrete Tools (Partially Implemented)
+#### 7. Concrete Tools (Partially Implemented)
 
 Concrete tools implement the Tool interface and perform actual operations. Each tool encapsulates its own execution logic and validation.
 
@@ -226,6 +226,8 @@ The Calculator is the first concrete tool implementation. It performs basic arit
 ```
 agent-harness/
 ├── cmd/                              (Planned: application entry points)
+├── config/                           (Configuration layer)
+│   └── config.json                   (Provider configuration)
 ├── internal/
 │   ├── tools/                        (Tool implementation and management)
 │   │   ├── tools.go                  (Tool interface definition)
@@ -237,7 +239,8 @@ agent-harness/
 │   │   ├── registry_test_list.go     (Registry.List() unit tests)
 │   │   └── registry_test_remove.go   (Registry.Remove() unit tests)
 │   ├── agent/                        (Planned: Agent implementation)
-│   └── orchestrator/                 (Planned: Orchestrator implementation)
+│   ├── orchestrator/                 (Planned: Orchestrator implementation)
+│   └── provider/                     (Planned: Provider layer for LLM connections)
 ├── shell/                            (Planned: Shell tool package)
 ├── go.mod                            (Go module definition)
 ├── go.sum                            (Go module checksums)
@@ -269,11 +272,13 @@ The `Tool` interface allows tools to be added and retrieved without type couplin
 
 | Component | Status | Details |
 |-----------|--------|---------|
+| Config Layer | ✅ Partially Implemented | `config.json` exists with provider configuration; `config.go` (loading logic) planned |
+| Provider Layer | 🔄 Planned | Will handle LLM provider connections using config |
 | Tool Interface | ✅ Implemented | Defines `Name()`, `Description()`, `Execute()` |
 | Tool Registry | ✅ Implemented | Full CRUD operations: `Register`, `Get`, `Has`, `List`, `Remove` |
 | Calculator Tool | ✅ Implemented | Supports `add`, `subtract`, `multiply`, `divide`, `modulus` operations |
-| Orchestrator | 🔄 Planned | Will coordinate tool execution and workflow |
 | Agent | 🔄 Planned | Will provide high-level task interface |
+| Orchestrator | 🔄 Planned | Will coordinate tool execution and workflow |
 | Shell Tool | 🔄 Planned | Will execute shell commands |
 | File Tool | 🔄 Planned | Will handle file operations |
 | Search Tool | 🔄 Planned | Will search across data sources |
