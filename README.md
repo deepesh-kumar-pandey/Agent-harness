@@ -30,8 +30,9 @@ Tool Interface (Implemented)
     ↓
 Concrete Tools
   ├── Calculator (Implemented)
-  ├── Shell (Planned)
-  └── Future tools (Search, File, etc.)
+  ├── Shell (Implemented)
+  ├── File System (Implemented)
+  └── Future tools (Search, etc.)
 ```
 
 ### Architecture Layers and Responsibilities
@@ -221,10 +222,43 @@ The Calculator is the first concrete tool implementation. It performs basic arit
   - Usage: `calculator.Modulus(10, 3)` → `1.0`
 
 ##### Future Tools (Planned)
-- **Shell**: Will execute shell commands and scripts.
 - **Search**: Will search for information across data sources.
-- **File**: Will handle file operations (read, write, delete).
 - Additional tools can be added without modifying the Registry or Orchestrator.
+
+##### File System Tool (Implemented)
+
+The File System package provides local file and directory operations.
+
+**Implementation**:
+- **`filesystem/filesystem.go`**: Defines the `FileSystem` type and its file operation methods.
+- **`Read(path string) ([]byte, error)`**: Reads a file and returns its contents.
+- **`Write(path string, data []byte) error`**: Creates or overwrites a file.
+- **`Remove(path string) ([]string, error)`**: Lists the entries in a directory.
+- **`Search(path string, pattern string) ([]string, error)`**: Recursively searches for files matching a pattern.
+- **`Delete(path string) error`**: Deletes a file or empty directory.
+- **Tests**: `filesystem/filesystem_test.go` covers read, write, listing, search, and delete scenarios.
+
+Run the File System package tests from the repository root with:
+
+```bash
+go test -v ./filesystem
+```
+
+##### Shell Tool (Implemented)
+
+The Shell package executes commands through the operating system and reports clear errors for missing commands or failed execution.
+
+**Implementation**:
+- **`shell/shell.go`**: Defines `Shell.Execute(command string, args ...string) error`.
+- Uses `exec.LookPath` to validate that a command is available before execution.
+- Captures combined command output and prints successful results.
+- **Tests**: `shell/shell_test.go` covers successful `echo` and `pwd` commands, missing commands, and failed commands.
+
+Run the Shell package tests from the repository root with:
+
+```bash
+go test -v ./shell
+```
 
 ### Current Package Structure
 
@@ -248,7 +282,12 @@ agent-harness/
 │   ├── agent/                        (Planned: Agent implementation)
 │   ├── orchestrator/                 (Planned: Orchestrator implementation)
 │   └── provider/                     (Planned: Provider layer for LLM connections)
-├── shell/                            (Planned: Shell tool package)
+├── shell/                            (Shell tool package)
+│   ├── shell.go                       (Shell command execution)
+│   └── shell_test.go                  (Shell unit tests)
+├── filesystem/                       (File system tool package)
+│   ├── filesystem.go                  (File and directory operations)
+│   └── filesystem_test.go             (File system unit tests)
 ├── go.mod                            (Go module definition)
 ├── go.sum                            (Go module checksums)
 └── README.md                         (This file)
@@ -286,6 +325,6 @@ The `Tool` interface allows tools to be added and retrieved without type couplin
 | Calculator Tool | ✅ Implemented | Supports `add`, `subtract`, `multiply`, `divide`, `modulus` operations |
 | Agent | 🔄 Planned | Will provide high-level task interface |
 | Orchestrator | 🔄 Planned | Will coordinate tool execution and workflow |
-| Shell Tool | 🔄 Planned | Will execute shell commands |
-| File Tool | 🔄 Planned | Will handle file operations |
+| Shell Tool | ✅ Implemented | Executes shell commands and reports command or execution failures |
+| File System Tool | ✅ Implemented | Reads, writes, lists, searches, and deletes local files and directories |
 | Search Tool | 🔄 Planned | Will search across data sources |
