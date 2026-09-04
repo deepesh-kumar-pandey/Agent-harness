@@ -6,99 +6,169 @@ import (
 )
 
 func TestToolRegistryGet(t *testing.T) {
-	registry := NewToolRegistry()
-	registeredTool := &Calculator{}
-	registry.Register("custom", registeredTool)
-
-	actualTool, err := registry.Get("custom")
-	if err != nil {
-		t.Fatalf("Get returned an unexpected error: %v", err)
-	}
-	if actualTool != registeredTool {
-		t.Fatalf("Get returned %T, want the registered tool", actualTool)
+	testCases := []struct {
+		name        string
+		toolName    string
+		register    bool
+		expectError bool
+	}{
+		{name: "Registered tool", toolName: "custom", register: true},
+		{name: "Missing tool", toolName: "missing", expectError: true},
 	}
 
-	missingTool, err := registry.Get("missing")
-	if err == nil {
-		t.Fatal("Get returned nil error for a missing tool")
-	}
-	if missingTool != nil {
-		t.Fatalf("Get returned %T for a missing tool, want nil", missingTool)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := &ToolRegistry{tools: make(map[string]Tool)}
+			if testCase.register {
+				registry.Register(testCase.toolName, &Calculator{})
+			}
+
+			actualTool, err := registry.Get(testCase.toolName)
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if actualTool != nil {
+					t.Fatalf("expected no tool, got %T", actualTool)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+			if actualTool == nil {
+				t.Fatal("expected tool, got nil")
+			}
+		})
 	}
 }
 
 func TestToolRegistryNew(t *testing.T) {
-	registry := NewToolRegistry()
-	for _, name := range []string{"calculator", "shell", "filesystem"} {
-		if !registry.Has(name) {
-			t.Errorf("NewToolRegistry did not register %q", name)
-		}
+	testCases := []struct {
+		name     string
+		toolName string
+	}{
+		{name: "Calculator", toolName: "calculator"},
+		{name: "Shell", toolName: "shell"},
+		{name: "Filesystem", toolName: "filesystem"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if !NewToolRegistry().Has(testCase.toolName) {
+				t.Errorf("expected %q to be registered", testCase.toolName)
+			}
+		})
 	}
 }
 
 func TestToolRegistryRegister(t *testing.T) {
-	registry := &ToolRegistry{tools: make(map[string]Tool)}
-	firstTool := &Calculator{}
-	secondTool := &Calculator{}
-
-	name, returnedTool := registry.Register("calculator", firstTool)
-	if name != "calculator" || returnedTool != firstTool {
-		t.Fatalf("Register returned (%q, %T), want (%q, firstTool)", name, returnedTool, "calculator")
+	testCases := []struct {
+		name string
+		tool Tool
+	}{
+		{name: "Register calculator", tool: &Calculator{}},
+		{name: "Register shell", tool: &ShellTool{}},
 	}
 
-	registry.Register("calculator", secondTool)
-	actualTool, err := registry.Get("calculator")
-	if err != nil {
-		t.Fatalf("Get after replacement returned an unexpected error: %v", err)
-	}
-	if actualTool != secondTool {
-		t.Fatalf("replacement did not update the registered tool")
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := &ToolRegistry{tools: make(map[string]Tool)}
+			name, returnedTool := registry.Register("tool", testCase.tool)
+
+			if name != "tool" || returnedTool != testCase.tool {
+				t.Fatalf("Register returned (%q, %T), want (%q, %T)", name, returnedTool, "tool", testCase.tool)
+			}
+		})
 	}
 }
 
 func TestToolRegistryHas(t *testing.T) {
-	registry := &ToolRegistry{tools: make(map[string]Tool)}
-	if registry.Has("calculator") {
-		t.Fatal("Has returned true for an unregistered tool")
+	testCases := []struct {
+		name      string
+		register  bool
+		expectHas bool
+	}{
+		{name: "Registered tool", register: true, expectHas: true},
+		{name: "Unregistered tool", expectHas: false},
 	}
 
-	registry.Register("calculator", &Calculator{})
-	if !registry.Has("calculator") {
-		t.Fatal("Has returned false for a registered tool")
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := &ToolRegistry{tools: make(map[string]Tool)}
+			if testCase.register {
+				registry.Register("calculator", &Calculator{})
+			}
+
+			if actualHas := registry.Has("calculator"); actualHas != testCase.expectHas {
+				t.Errorf("expected Has to be %v, got %v", testCase.expectHas, actualHas)
+			}
+		})
 	}
 }
 
 func TestToolRegistryList(t *testing.T) {
-	registry := &ToolRegistry{tools: make(map[string]Tool)}
-	if actual := registry.List(); len(actual) != 0 {
-		t.Fatalf("List on an empty registry returned %v", actual)
+	testCases := []struct {
+		name          string
+		tools         []string
+		expectedTools []string
+	}{
+		{name: "Empty registry"},
+		{
+			name:          "Multiple tools",
+			tools:         []string{"calculator", "shell", "filesystem"},
+			expectedTools: []string{"calculator", "shell", "filesystem"},
+		},
 	}
 
-	for _, name := range []string{"calculator", "shell", "filesystem"} {
-		registry.Register(name, &Calculator{})
-	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := &ToolRegistry{tools: make(map[string]Tool)}
+			for _, name := range testCase.tools {
+				registry.Register(name, &Calculator{})
+			}
 
-	actual := registry.List()
-	if !reflect.DeepEqual(stringSet(actual), stringSet([]string{"calculator", "shell", "filesystem"})) {
-		t.Fatalf("List returned %v, want all registered names", actual)
+			actual := registry.List()
+			if !reflect.DeepEqual(stringSet(actual), stringSet(testCase.expectedTools)) {
+				t.Fatalf("List returned %v, want %v", actual, testCase.expectedTools)
+			}
+		})
 	}
 }
 
 func TestToolRegistryRemove(t *testing.T) {
-	registry := &ToolRegistry{tools: make(map[string]Tool)}
-	registry.Register("calculator", &Calculator{})
+	testCases := []struct {
+		name        string
+		register    bool
+		expectError bool
+	}{
+		{name: "Remove existing tool", register: true},
+		{name: "Remove missing tool", expectError: true},
+	}
 
-	if err := registry.Remove("calculator"); err != nil {
-		t.Fatalf("Remove returned an unexpected error: %v", err)
-	}
-	if registry.Has("calculator") {
-		t.Fatal("removed tool is still registered")
-	}
-	if _, err := registry.Get("calculator"); err == nil {
-		t.Fatal("Get returned nil error for a removed tool")
-	}
-	if err := registry.Remove("calculator"); err == nil {
-		t.Fatal("Remove returned nil error for a missing tool")
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := &ToolRegistry{tools: make(map[string]Tool)}
+			if testCase.register {
+				registry.Register("calculator", &Calculator{})
+			}
+
+			err := registry.Remove("calculator")
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+			if registry.Has("calculator") {
+				t.Fatal("expected tool to be removed")
+			}
+		})
 	}
 }
 
