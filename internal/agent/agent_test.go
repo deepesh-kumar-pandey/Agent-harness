@@ -67,7 +67,8 @@ func TestExecuteTool(t *testing.T) {
 			name:     "Execute shell command",
 			toolName: "shell",
 			args: map[string]any{
-				"command": "echo hello",
+				"command": "echo",
+				"args":    []string{"hello"},
 			},
 			expected:    "hello\n",
 			expectError: false,
