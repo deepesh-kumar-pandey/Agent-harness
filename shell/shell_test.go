@@ -41,7 +41,10 @@ func TestExecute(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			shell := &Shell{}
 
-			err := shell.Execute(testCase.command, testCase.args...)
+			_, err := shell.Execute(
+				testCase.command,
+				testCase.args...,
+			)
 
 			if testCase.expectError && err == nil {
 				t.Fatalf("expected error, got nil")
