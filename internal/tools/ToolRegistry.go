@@ -9,9 +9,15 @@ type ToolRegistry struct {
 }
 
 func NewToolRegistry() *ToolRegistry {
-	return &ToolRegistry{
+	registry := &ToolRegistry{
 		tools: make(map[string]Tool),
 	}
+
+	registry.Register("calculator", &Calculator{})
+	registry.Register("shell", &ShellTool{})
+	registry.Register("filesystem", &FilesystemTool{})
+
+	return registry
 }
 
 func (tr *ToolRegistry) Register(name string, tool Tool) (string, Tool) {
