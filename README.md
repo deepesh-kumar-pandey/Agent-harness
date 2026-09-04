@@ -9,6 +9,11 @@ An agent harness is a runtime framework that connects an LLM to external tools a
 
 Think of it as the scaffolding that turns a language model into an autonomous agent: the model supplies the intelligence, while the harness supplies the environment, the tool interface, and the execution loop that ties it together.
 
+## Recent Progress
+
+- **Yesterday**: Added the low-level shell execution logic in `shell/shell.go`. It validates commands with `exec.LookPath`, executes them with `os/exec`, captures combined output, and returns `(string, error)`.
+- **Today**: Added the `ShellTool` and `FilesystemTool`, exposing shell commands and local filesystem operations through the common `Tool` interface.
+
 ## Architecture
 
 The Agent Harness is built around a **layered tool-execution architecture** that emphasizes separation of concerns and extensibility:
@@ -251,7 +256,8 @@ The Shell package executes commands through the operating system and reports cle
 **Implementation**:
 - **`shell/shell.go`**: Defines `Shell.Execute(command string, args ...string) error`.
 - Uses `exec.LookPath` to validate that a command is available before execution.
-- Captures combined command output and prints successful results.
+- Captures combined command output and returns it with any execution error.
+- **`Shell.Execute(command string, args ...string) (string, error)`**: Executes a command and returns its combined output.
 - **Tests**: `shell/shell_test.go` covers successful `echo` and `pwd` commands, missing commands, and failed commands.
 
 Run the Shell package tests from the repository root with:
@@ -275,10 +281,11 @@ agent-harness/
 │   │   ├── ToolRegistry.go           (Tool Registry implementation)
 │   │   ├── calculator.go             (Calculator tool implementation)
 │   │   ├── calculator_test.go        (Calculator unit tests)
-│   │   ├── registry_test.go          (Registry unit tests)
-│   │   ├── registry_test_has.go      (Registry.Has() unit tests)
-│   │   ├── registry_test_list.go     (Registry.List() unit tests)
-│   │   └── registry_test_remove.go   (Registry.Remove() unit tests)
+│   │   ├── filesystem_tool.go        (Filesystem tool implementation)
+│   │   ├── filesystem_tool_test.go   (Filesystem tool unit tests)
+│   │   ├── shell_tool.go             (Shell tool implementation)
+│   │   ├── shell_tool_test.go        (Shell tool unit tests)
+│   │   └── registry_test.go          (Registry unit tests)
 │   ├── agent/                        (Planned: Agent implementation)
 │   ├── orchestrator/                 (Planned: Orchestrator implementation)
 │   └── provider/                     (Planned: Provider layer for LLM connections)
