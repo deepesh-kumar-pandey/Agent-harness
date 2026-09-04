@@ -1,49 +1,111 @@
 package tools
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
-func TestToolRegistry(t *testing.T) {
+func TestToolRegistryGet(t *testing.T) {
+	registry := NewToolRegistry()
+	registeredTool := &Calculator{}
+	registry.Register("custom", registeredTool)
 
-	testCases := []struct {
-		name        string
-		toolName    string
-		tool        Tool
-		expectError bool
-	}{
-		{"Register and retrieve calculator", "calculator", &Calculator{}, false},
-		{"Calculator not registered", "nonexistant", nil, true},
+	actualTool, err := registry.Get("custom")
+	if err != nil {
+		t.Fatalf("Get returned an unexpected error: %v", err)
+	}
+	if actualTool != registeredTool {
+		t.Fatalf("Get returned %T, want the registered tool", actualTool)
 	}
 
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-
-			tr := NewToolRegistry()
-
-			if testCase.tool != nil {
-				tr.Register(testCase.toolName, testCase.tool)
-			}
-
-			actualTool, err := tr.Get(testCase.toolName)
-
-			if testCase.expectError {
-				if err == nil {
-					t.Errorf("Expected error for %s, but got none", testCase.name)
-				}
-
-				if actualTool != nil {
-					t.Errorf("Expected no tool for %s, but got one", testCase.name)
-				}
-
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Unexpected error for %s: %v", testCase.name, err)
-			}
-
-			if actualTool == nil {
-				t.Errorf("Expected tool for %s, but got nil", testCase.name)
-			}
-		})
+	missingTool, err := registry.Get("missing")
+	if err == nil {
+		t.Fatal("Get returned nil error for a missing tool")
 	}
+	if missingTool != nil {
+		t.Fatalf("Get returned %T for a missing tool, want nil", missingTool)
+	}
+}
+
+func TestToolRegistryNew(t *testing.T) {
+	registry := NewToolRegistry()
+	for _, name := range []string{"calculator", "shell", "filesystem"} {
+		if !registry.Has(name) {
+			t.Errorf("NewToolRegistry did not register %q", name)
+		}
+	}
+}
+
+func TestToolRegistryRegister(t *testing.T) {
+	registry := &ToolRegistry{tools: make(map[string]Tool)}
+	firstTool := &Calculator{}
+	secondTool := &Calculator{}
+
+	name, returnedTool := registry.Register("calculator", firstTool)
+	if name != "calculator" || returnedTool != firstTool {
+		t.Fatalf("Register returned (%q, %T), want (%q, firstTool)", name, returnedTool, "calculator")
+	}
+
+	registry.Register("calculator", secondTool)
+	actualTool, err := registry.Get("calculator")
+	if err != nil {
+		t.Fatalf("Get after replacement returned an unexpected error: %v", err)
+	}
+	if actualTool != secondTool {
+		t.Fatalf("replacement did not update the registered tool")
+	}
+}
+
+func TestToolRegistryHas(t *testing.T) {
+	registry := &ToolRegistry{tools: make(map[string]Tool)}
+	if registry.Has("calculator") {
+		t.Fatal("Has returned true for an unregistered tool")
+	}
+
+	registry.Register("calculator", &Calculator{})
+	if !registry.Has("calculator") {
+		t.Fatal("Has returned false for a registered tool")
+	}
+}
+
+func TestToolRegistryList(t *testing.T) {
+	registry := &ToolRegistry{tools: make(map[string]Tool)}
+	if actual := registry.List(); len(actual) != 0 {
+		t.Fatalf("List on an empty registry returned %v", actual)
+	}
+
+	for _, name := range []string{"calculator", "shell", "filesystem"} {
+		registry.Register(name, &Calculator{})
+	}
+
+	actual := registry.List()
+	if !reflect.DeepEqual(stringSet(actual), stringSet([]string{"calculator", "shell", "filesystem"})) {
+		t.Fatalf("List returned %v, want all registered names", actual)
+	}
+}
+
+func TestToolRegistryRemove(t *testing.T) {
+	registry := &ToolRegistry{tools: make(map[string]Tool)}
+	registry.Register("calculator", &Calculator{})
+
+	if err := registry.Remove("calculator"); err != nil {
+		t.Fatalf("Remove returned an unexpected error: %v", err)
+	}
+	if registry.Has("calculator") {
+		t.Fatal("removed tool is still registered")
+	}
+	if _, err := registry.Get("calculator"); err == nil {
+		t.Fatal("Get returned nil error for a removed tool")
+	}
+	if err := registry.Remove("calculator"); err == nil {
+		t.Fatal("Remove returned nil error for a missing tool")
+	}
+}
+
+func stringSet(values []string) map[string]bool {
+	result := make(map[string]bool, len(values))
+	for _, value := range values {
+		result[value] = true
+	}
+	return result
 }
