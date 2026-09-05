@@ -23,3 +23,10 @@ func (a *Agent) ExecuteTool(name string, args map[string]any) (any, error) {
 
 	return tool.Execute(args)
 }
+
+func (a *Agent) Run(
+	name string,
+	args map[string]any,
+) (any, error) {
+	return a.ExecuteTool(name, args)
+}
