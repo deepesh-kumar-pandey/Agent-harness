@@ -14,6 +14,9 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 - **Yesterday**: Added the low-level shell execution logic in `shell/shell.go`. It validates commands with `exec.LookPath`, executes them with `os/exec`, captures combined output, and returns `(string, error)`.
 - **Today**: Added the `ShellTool` and `FilesystemTool`, exposing shell commands and local filesystem operations through the common `Tool` interface.
 - **Today**: Added the initial Agent logic in `internal/agent/agent.go`. The Agent accepts a Tool Registry, retrieves tools by name, forwards argument maps, and returns tool results or errors.
+- **Today**: Added `Agent.Run`, which provides the public entry point for executing a named registered tool.
+- **Today**: Implemented the Ollama Provider in `internal/provider/provider.go`, including request validation, JSON encoding, HTTP requests, response decoding, and injectable HTTP dependencies for testing.
+- **Today**: Added provider unit tests with a local `httptest` server and an Ollama integration test for the local service.
 
 ## Architecture
 
@@ -24,7 +27,7 @@ config/config.json
     ↓
 Config Layer (Implemented)
     ↓
-Provider Layer (Planned)
+Provider Layer (Implemented)
     ↓
   Agent (Implemented)
     ↓
@@ -78,19 +81,36 @@ Run the config package tests from the repository root with:
 go test -v ./config
 ```
 
-#### 2. Provider Layer (Planned)
+#### 2. Provider Layer (Implemented)
 - Manages connections to LLM providers (e.g., Ollama, OpenAI, etc.).
-- Uses configuration from the Config Layer to establish connections.
-- Responsible for sending requests to and receiving responses from external LLM providers.
+- The Ollama implementation sends chat requests to `/api/chat` and decodes the returned assistant message.
+- Validates that a model and at least one message are provided before making a network request.
+- Supports configurable `BaseURL` and `http.Client` values so tests do not need a running external service.
 - Acts as the bridge between the Agent and external AI services.
-- **Status**: Planned for future implementation.
+- **Implemented types**: `Provider`, `ChatRequest`, `Message`, `ChatResponse`, and `OllamaProvider`.
+- **Tests**: `internal/provider/provider_test.go` covers request validation and the provider response path using `httptest`.
+- **Integration test**: `internal/provider/provider_integration_test.go` verifies communication with a local Ollama instance.
+
+Run provider unit tests from the repository root with:
+
+```bash
+go test -v ./internal/provider
+```
+
+Run the Ollama integration test when a local Ollama service is running:
+
+```bash
+go test -v -run TestOllamaProvider_Integration ./internal/provider
+```
 
 #### 3. Agent (Implemented)
 - Represents the high-level AI agent interface.
 - Receives a Tool Registry during construction.
 - Retrieves a named tool and forwards the provided arguments to its `Execute()` method.
+- `Run(name, args)` is the public execution entry point and delegates to `ExecuteTool`.
 - Returns the tool result or execution error to the caller.
-- **Status**: Initial tool-execution logic implemented; task planning and LLM integration are planned.
+- **Tests**: `internal/agent/agent_test.go` covers agent construction, calculator and shell execution, unknown tools, and `Run`.
+- **Status**: Tool-execution logic implemented; task planning and LLM orchestration are planned.
 
 #### 4. Orchestrator (Planned)
 - Acts as the central coordinator of the agent workflow.
@@ -290,7 +310,10 @@ agent-harness/
 │   │   ├── agent.go                  (Agent tool execution logic)
 │   │   └── agent_test.go             (Agent unit tests)
 │   ├── orchestrator/                 (Planned: Orchestrator implementation)
-│   └── provider/                     (Planned: Provider layer for LLM connections)
+│   └── provider/                     (Ollama Provider and provider tests)
+│       ├── provider.go               (Provider interface and Ollama implementation)
+│       ├── provider_test.go           (Provider unit tests)
+│       └── provider_integration_test.go (Local Ollama integration test)
 ├── shell/                            (Shell tool package)
 │   ├── shell.go                       (Shell command execution)
 │   └── shell_test.go                  (Shell unit tests)
@@ -328,11 +351,11 @@ The `Tool` interface allows tools to be added and retrieved without type couplin
 | Component | Status | Details |
 |-----------|--------|---------|
 | Config Layer | ✅ Implemented | `config/config.go` loads and validates provider configuration from `config/config.json` |
-| Provider Layer | 🔄 Planned | Will handle LLM provider connections using config |
+| Provider Layer | ✅ Implemented | Ollama chat provider with validation, HTTP requests, response decoding, and testable dependencies |
 | Tool Interface | ✅ Implemented | Defines `Name()`, `Description()`, `Execute()` |
 | Tool Registry | ✅ Implemented | Full CRUD operations: `Register`, `Get`, `Has`, `List`, `Remove` |
 | Calculator Tool | ✅ Implemented | Supports `add`, `subtract`, `multiply`, `divide`, `modulus` operations |
-| Agent | ✅ Initial implementation | Executes named tools through the Tool Registry; planning and LLM integration are planned |
+| Agent | ✅ Implemented | Executes named tools through `Run` and `ExecuteTool`; planning and LLM orchestration are planned |
 | Orchestrator | 🔄 Planned | Will coordinate tool execution and workflow |
 | Shell Tool | ✅ Implemented | Executes shell commands and reports command or execution failures |
 | File System Tool | ✅ Implemented | Reads, writes, lists, searches, and deletes local files and directories |
