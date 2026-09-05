@@ -130,3 +130,109 @@ func TestExecuteTool(t *testing.T) {
 		})
 	}
 }
+
+func TestRun(t *testing.T) {
+	testCases := []struct {
+		name        string
+		toolName    string
+		args        map[string]any
+		expected    any
+		expectError bool
+	}{
+		// ─────────────────────────────────────
+		// Calculator
+		// ─────────────────────────────────────
+		{
+			name:     "Run calculator",
+			toolName: "calculator",
+			args: map[string]any{
+				"operation": "add",
+				"numbers":   []float64{10, 20},
+			},
+			expected:    float64(30),
+			expectError: false,
+		},
+
+		// ─────────────────────────────────────
+		// Shell
+		// ─────────────────────────────────────
+		{
+			name:     "Run shell",
+			toolName: "shell",
+			args: map[string]any{
+				"command": "echo",
+				"args":    []string{"hello"},
+			},
+			expected:    "hello\n",
+			expectError: false,
+		},
+
+		// ─────────────────────────────────────
+		// Error case
+		// ─────────────────────────────────────
+		{
+			name:        "Run unknown tool",
+			toolName:    "unknown",
+			args:        map[string]any{},
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	// ─────────────────────────────────────────
+	// Execute test cases
+	// ─────────────────────────────────────────
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+
+			// Create registry and agent
+			registry := tools.NewToolRegistry()
+			agent := NewAgent(registry)
+
+			// Run the requested tool
+			result, err := agent.Run(
+				testCase.toolName,
+				testCase.args,
+			)
+
+			// ────────────────
+			// Expected error
+			// ────────────────
+			if testCase.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+
+				if result != nil {
+					t.Fatalf(
+						"expected nil result, got %v",
+						result,
+					)
+				}
+
+				return
+			}
+
+			// ────────────────
+			// Unexpected error
+			// ────────────────
+			if err != nil {
+				t.Fatalf(
+					"unexpected error: %v",
+					err,
+				)
+			}
+
+			// ────────────────
+			// Validate result
+			// ────────────────
+			if result != testCase.expected {
+				t.Fatalf(
+					"expected %v, got %v",
+					testCase.expected,
+					result,
+				)
+			}
+		})
+	}
+}
