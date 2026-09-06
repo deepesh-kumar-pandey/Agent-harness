@@ -284,3 +284,88 @@ func TestOrchestratorAssignTool(t *testing.T) {
 
 	fmt.Println("Orchestrator AssignTool tests completed!")
 }
+
+// ─────────────────────────────────────────────
+// Test Orchestrator RunAgent
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgent(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator RunAgent tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	testCases := []struct {
+		name            string
+		request         providerpkg.ChatRequest
+		expectError     bool
+		expectedContent string
+	}{
+		{
+			name: "Run agent with valid response",
+			request: providerpkg.ChatRequest{
+				Model: "test-model",
+				Messages: []providerpkg.Message{
+					{
+						Role:    "user",
+						Content: "Hello",
+					},
+				},
+			},
+			expectError:     false,
+			expectedContent: "Fake response",
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		t.Run(testCase.name, func(t *testing.T) {
+
+			fmt.Printf("Running test: %s\n", testCase.name)
+
+			response, err := testOrchestrator.RunAgent(
+				testCase.request,
+			)
+
+			if testCase.expectError && err == nil {
+				t.Fatalf("Expected an error, but got nil")
+			}
+
+			if !testCase.expectError && err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if !testCase.expectError &&
+				response.Content != testCase.expectedContent {
+
+				t.Fatalf(
+					"Expected content %q, got %q",
+					testCase.expectedContent,
+					response.Content,
+				)
+			}
+
+			if !testCase.expectError {
+				fmt.Printf(
+					"Agent response: %s\n",
+					response.Content,
+				)
+			} else {
+				fmt.Printf(
+					"Error correctly returned: %v\n",
+					err,
+				)
+			}
+		})
+	}
+
+	fmt.Println("Orchestrator RunAgent tests completed!")
+}
