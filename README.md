@@ -17,6 +17,11 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 - **Today**: Added `Agent.Run`, which provides the public entry point for executing a named registered tool.
 - **Today**: Implemented the Ollama Provider in `internal/provider/provider.go`, including request validation, JSON encoding, HTTP requests, response decoding, and injectable HTTP dependencies for testing.
 - **Today**: Added provider unit tests with a local `httptest` server and an Ollama integration test for the local service.
+- **Today**: Added the Orchestrator layer in `internal/orchestrator`, connecting the Agent and Provider layers through `Run`, `Chat`, and `AssignTool`.
+- **Today**: Added the `ToolCall` and `AgentResponse` contracts with JSON tags for structured LLM responses.
+- **Today**: Added `RunAgent`, which accepts plain text or structured JSON provider responses, executes requested tool calls, and returns tool results.
+- **Today**: Added comprehensive Orchestrator tests for direct tool execution, provider chat, tool assignment, plain text, JSON tool calls, invalid JSON, and tool execution through `RunAgent`.
+- **Today**: Updated the Calculator to accept both direct `[]float64` arguments and JSON-decoded numeric arrays.
 
 ## Architecture
 
@@ -31,7 +36,7 @@ Provider Layer (Implemented)
     ↓
   Agent (Implemented)
     ↓
-Orchestrator (Planned)
+  Orchestrator (Implemented)
     ↓
 Tool Registry (Implemented)
     ↓
@@ -112,17 +117,29 @@ go test -v -run TestOllamaProvider_Integration ./internal/provider
 - **Tests**: `internal/agent/agent_test.go` covers agent construction, calculator and shell execution, unknown tools, and `Run`.
 - **Status**: Tool-execution logic implemented; task planning and LLM orchestration are planned.
 
-#### 4. Orchestrator (Planned)
+#### 4. Orchestrator (Implemented)
 - Acts as the central coordinator of the agent workflow.
-- Receives the agent's requested action and analyzes what needs to be done.
-- Determines which registered tool should be used for the task.
-- Retrieves the required tool from the Tool Registry.
-- Passes the appropriate arguments to the tool's `Execute()` method.
-- Handles the tool's result or error and returns it to the agent.
+- `Run(name, args)` executes a named tool through the Agent.
+- `Chat(request)` forwards chat requests to the configured Provider.
+- `AssignTool(toolCall)` executes a structured `ToolCall` through the Agent.
+- `RunAgent(request)` sends a request to the Provider, parses the response, executes a requested tool, and returns the result.
+- Supports both plain-text responses and structured JSON responses.
+- Uses `json.Valid()` before unmarshalling structured responses.
+- Wraps provider, parsing, and tool execution errors with context.
 - **Key distinction**: The Orchestrator is responsible for **coordinating execution** and **workflow decisions**, while the Registry is only responsible for **managing tools**.
-- **Status**: Planned for future implementation.
+- **Status**: Implemented; the multi-turn agent loop is the next milestone.
 
-#### 5. Tool Registry (Implemented)
+#### 5. Agent Response Contract (Implemented)
+- Defined in `internal/orchestrator/response.go`.
+- `ToolCall` contains a tool name and argument map.
+- `AgentResponse` contains response content and an optional tool call.
+- JSON tags map structured provider responses to `content` and `tool_call`.
+
+#### 6. Agent Loop (Planned)
+- Planned flow: LLM response -> `ToolCall` -> execute tool -> send the tool result back to the LLM -> final response.
+- The current `RunAgent` implementation executes one requested tool and returns its result; it does not yet implement the multi-turn loop.
+
+#### 7. Tool Registry (Implemented)
 Maintains a centralized collection of available tools. It acts as the directory/lookup layer that allows the Orchestrator to find and retrieve tools by name.
 
 **Responsibilities**:
@@ -172,7 +189,7 @@ Maintains a centralized collection of available tools. It acts as the directory/
   - Error: Returns `fmt.Errorf("tool %q not found", name)` if the tool is not registered.
   - Usage: Used to deregister tools dynamically at runtime.
 
-#### 6. Tool Interface (Implemented)
+#### 8. Tool Interface (Implemented)
 Defines the common contract that all tools must implement. This allows the Registry and Orchestrator to work with any tool without coupling to concrete implementations.
 
 **Defined Interface** (`tools.go`):
@@ -201,7 +218,7 @@ type Tool interface {
   - Returns: The result of the operation, or an error if execution fails.
   - Usage: Called by the Orchestrator to perform the requested task.
 
-#### 7. Concrete Tools (Partially Implemented)
+#### 9. Concrete Tools (Partially Implemented)
 
 Concrete tools implement the Tool interface and perform actual operations. Each tool encapsulates its own execution logic and validation.
 
@@ -219,7 +236,7 @@ The Calculator is the first concrete tool implementation. It performs basic arit
 - **`Execute(args map[string]any) (any, error)`**: Routes to the appropriate arithmetic operation based on the `args` map:
   - Expected `args`:
     - `"operation"` (string): The operation to perform (`"add"`, `"multiply"`, `"subtract"`, `"divide"`, `"modulus"`).
-    - `"numbers"` ([]float64): The operands for the operation.
+    - `"numbers"` ([]float64 or JSON-decoded numeric array): The operands for the operation.
   - Returns: The numeric result, or an error if inputs are invalid or division by zero occurs.
   - Example: `calculator.Execute(map[string]any{"operation": "add", "numbers": []float64{2, 3, 5}})`
 
@@ -309,7 +326,11 @@ agent-harness/
 │   ├── agent/                        (Initial Agent implementation)
 │   │   ├── agent.go                  (Agent tool execution logic)
 │   │   └── agent_test.go             (Agent unit tests)
-│   ├── orchestrator/                 (Planned: Orchestrator implementation)
+│   ├── orchestrator/                 (Orchestrator implementation)
+│   │   ├── orchestrator.go           (Orchestrator workflow and tool execution)
+│   │   ├── orchestrator_test.go      (Orchestrator unit tests)
+│   │   ├── response.go               (AgentResponse and ToolCall contracts)
+│   │   └── response_test.go          (Response parsing tests)
 │   └── provider/                     (Ollama Provider and provider tests)
 │       ├── provider.go               (Provider interface and Ollama implementation)
 │       ├── provider_test.go           (Provider unit tests)
@@ -356,7 +377,10 @@ The `Tool` interface allows tools to be added and retrieved without type couplin
 | Tool Registry | ✅ Implemented | Full CRUD operations: `Register`, `Get`, `Has`, `List`, `Remove` |
 | Calculator Tool | ✅ Implemented | Supports `add`, `subtract`, `multiply`, `divide`, `modulus` operations |
 | Agent | ✅ Implemented | Executes named tools through `Run` and `ExecuteTool`; planning and LLM orchestration are planned |
-| Orchestrator | 🔄 Planned | Will coordinate tool execution and workflow |
+| Orchestrator | ✅ Implemented | Runs tools, forwards provider requests, parses responses, and executes requested tool calls |
+| AgentResponse | ✅ Implemented | Defines structured response content and optional tool calls |
+| Tool execution from RunAgent | ✅ Implemented | Executes a requested tool and returns its result as response content |
+| Agent loop | 🔄 Planned | Will send tool results back to the LLM for a final response |
 | Shell Tool | ✅ Implemented | Executes shell commands and reports command or execution failures |
 | File System Tool | ✅ Implemented | Reads, writes, lists, searches, and deletes local files and directories |
 | Search Tool | 🔄 Planned | Will search across data sources |
