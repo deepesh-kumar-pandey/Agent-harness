@@ -44,7 +44,17 @@ func (o *DefaultOrchestrator) Chat(
 	request providerpkg.ChatRequest,
 ) (providerpkg.ChatResponse, error) {
 
-	fmt.Println("💬 Orchestrator sending request to Provider...")
+	fmt.Println(" Orchestrator sending request to Provider...")
 
 	return o.providerClient.Chat(request)
+}
+
+func (o *DefaultOrchestrator) AssignTool(
+	toolCall ToolCall,
+) (any, error) {
+
+	return o.agentClient.ExecuteTool(
+		toolCall.Tool,
+		toolCall.Args,
+	)
 }
