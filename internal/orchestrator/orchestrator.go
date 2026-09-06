@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"fmt"
 
 	agentpkg "agent-harness/internal/agent"
@@ -57,4 +58,32 @@ func (o *DefaultOrchestrator) AssignTool(
 		toolCall.Tool,
 		toolCall.Args,
 	)
+}
+
+func (o *DefaultOrchestrator) RunAgent(request providerpkg.ChatRequest) (AgentResponse, error) {
+
+	// Send the request to the LLM provider.
+	response, err := o.providerClient.Chat(request)
+	if err != nil {
+		return AgentResponse{}, err
+	}
+
+	// Decode structured tool-call responses when the provider returns JSON.
+	var agentResponse AgentResponse
+
+	if json.Valid([]byte(response.Content)) {
+		err = json.Unmarshal([]byte(response.Content), &agentResponse)
+		if err != nil {
+			return AgentResponse{}, fmt.Errorf(
+				"failed to parse agent response: %w",
+				err,
+			)
+		}
+	} else {
+		// Plain text is a valid provider response with no tool call.
+		agentResponse.Content = response.Content
+	}
+
+	// Return the structured agent response.
+	return agentResponse, nil
 }
