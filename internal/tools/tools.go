@@ -23,10 +23,9 @@ func (c Calculator) Execute(args map[string]any) (any, error) {
 		return nil, fmt.Errorf("operation must be a string")
 	}
 
-	numbers, ok := args["numbers"].([]float64)
-
-	if !ok {
-		return nil, fmt.Errorf("numbers must have decimal values")
+	numbers, err := decimalNumbers(args["numbers"])
+	if err != nil {
+		return nil, err
 	}
 
 	switch operation {
@@ -45,5 +44,24 @@ func (c Calculator) Execute(args map[string]any) (any, error) {
 		return c.Modulus(numbers[0], numbers[1])
 	default:
 		return nil, fmt.Errorf("unsupported operation: %s", operation)
+	}
+}
+
+func decimalNumbers(value any) ([]float64, error) {
+	switch numbers := value.(type) {
+	case []float64:
+		return numbers, nil
+	case []any:
+		result := make([]float64, len(numbers))
+		for index, number := range numbers {
+			value, ok := number.(float64)
+			if !ok {
+				return nil, fmt.Errorf("numbers[%d] must be a number", index)
+			}
+			result[index] = value
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("numbers must be an array of numbers")
 	}
 }
