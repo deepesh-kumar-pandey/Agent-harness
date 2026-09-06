@@ -13,14 +13,16 @@ import (
 // Fake Provider
 // ─────────────────────────────────────────────
 
-type FakeProvider struct{}
+type FakeProvider struct {
+	Response string
+}
 
 func (f *FakeProvider) Chat(
 	request providerpkg.ChatRequest,
 ) (providerpkg.ChatResponse, error) {
 
 	return providerpkg.ChatResponse{
-		Content: "Fake response",
+		Content: f.Response,
 	}, nil
 }
 
@@ -35,7 +37,9 @@ func TestOrchestratorRun(t *testing.T) {
 	registry := toolspkg.NewToolRegistry()
 	testAgent := agentpkg.NewAgent(registry)
 
-	fakeProvider := &FakeProvider{}
+	fakeProvider := &FakeProvider{
+		Response: "Fake response",
+	}
 
 	testOrchestrator := NewOrchestrator(
 		testAgent,
@@ -121,7 +125,9 @@ func TestOrchestratorChat(t *testing.T) {
 	registry := toolspkg.NewToolRegistry()
 	testAgent := agentpkg.NewAgent(registry)
 
-	fakeProvider := &FakeProvider{}
+	fakeProvider := &FakeProvider{
+		Response: "Fake response",
+	}
 
 	testOrchestrator := NewOrchestrator(
 		testAgent,
@@ -206,7 +212,9 @@ func TestOrchestratorAssignTool(t *testing.T) {
 	registry := toolspkg.NewToolRegistry()
 	testAgent := agentpkg.NewAgent(registry)
 
-	fakeProvider := &FakeProvider{}
+	fakeProvider := &FakeProvider{
+		Response: "Fake response",
+	}
 
 	testOrchestrator := NewOrchestrator(
 		testAgent,
@@ -296,21 +304,18 @@ func TestOrchestratorRunAgent(t *testing.T) {
 	registry := toolspkg.NewToolRegistry()
 	testAgent := agentpkg.NewAgent(registry)
 
-	fakeProvider := &FakeProvider{}
-
-	testOrchestrator := NewOrchestrator(
-		testAgent,
-		fakeProvider,
-	)
-
 	testCases := []struct {
 		name            string
+		response        string
 		request         providerpkg.ChatRequest
 		expectError     bool
 		expectedContent string
+		expectTool      bool
+		expectedTool    string
 	}{
 		{
-			name: "Run agent with valid response",
+			name:     "Plain text response",
+			response: "Hello",
 			request: providerpkg.ChatRequest{
 				Model: "test-model",
 				Messages: []providerpkg.Message{
@@ -321,7 +326,49 @@ func TestOrchestratorRunAgent(t *testing.T) {
 				},
 			},
 			expectError:     false,
-			expectedContent: "Fake response",
+			expectedContent: "Hello",
+			expectTool:      false,
+		},
+		{
+			name: "JSON tool call response",
+			response: `{
+				"content": "",
+				"tool_call": {
+					"tool": "calculator",
+					"args": {
+						"operation": "add",
+						"numbers": [10, 20]
+					}
+				}
+			}`,
+			request: providerpkg.ChatRequest{
+				Model: "test-model",
+				Messages: []providerpkg.Message{
+					{
+						Role:    "user",
+						Content: "Calculate 10 + 20",
+					},
+				},
+			},
+			expectError:  false,
+			expectTool:   true,
+			expectedTool: "calculator",
+		},
+		{
+			name:     "Invalid JSON response",
+			response: `{"content": "Hello"`,
+			request: providerpkg.ChatRequest{
+				Model: "test-model",
+				Messages: []providerpkg.Message{
+					{
+						Role:    "user",
+						Content: "Hello",
+					},
+				},
+			},
+			expectError:     false,
+			expectedContent: `{"content": "Hello"`,
+			expectTool:      false,
 		},
 	}
 
@@ -330,6 +377,15 @@ func TestOrchestratorRunAgent(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 
 			fmt.Printf("Running test: %s\n", testCase.name)
+
+			fakeProvider := &FakeProvider{
+				Response: testCase.response,
+			}
+
+			testOrchestrator := NewOrchestrator(
+				testAgent,
+				fakeProvider,
+			)
 
 			response, err := testOrchestrator.RunAgent(
 				testCase.request,
@@ -343,22 +399,49 @@ func TestOrchestratorRunAgent(t *testing.T) {
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
-			if !testCase.expectError &&
-				response.Content != testCase.expectedContent {
+			if !testCase.expectError {
 
-				t.Fatalf(
-					"Expected content %q, got %q",
-					testCase.expectedContent,
-					response.Content,
-				)
+				if response.Content != testCase.expectedContent {
+					t.Fatalf(
+						"Expected content %q, got %q",
+						testCase.expectedContent,
+						response.Content,
+					)
+				}
+
+				if testCase.expectTool {
+
+					if response.ToolCall == nil {
+						t.Fatalf("Expected tool call, but got nil")
+					}
+
+					if response.ToolCall.Tool != testCase.expectedTool {
+						t.Fatalf(
+							"Expected tool %q, got %q",
+							testCase.expectedTool,
+							response.ToolCall.Tool,
+						)
+					}
+
+					fmt.Printf(
+						"Tool call correctly parsed: %s\n",
+						response.ToolCall.Tool,
+					)
+
+				} else {
+
+					if response.ToolCall != nil {
+						t.Fatalf("Expected no tool call")
+					}
+
+					fmt.Printf(
+						"Agent response: %s\n",
+						response.Content,
+					)
+				}
 			}
 
-			if !testCase.expectError {
-				fmt.Printf(
-					"Agent response: %s\n",
-					response.Content,
-				)
-			} else {
+			if testCase.expectError {
 				fmt.Printf(
 					"Error correctly returned: %v\n",
 					err,
