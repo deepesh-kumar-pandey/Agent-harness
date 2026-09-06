@@ -310,8 +310,6 @@ func TestOrchestratorRunAgent(t *testing.T) {
 		request         providerpkg.ChatRequest
 		expectError     bool
 		expectedContent string
-		expectTool      bool
-		expectedTool    string
 	}{
 		{
 			name:     "Plain text response",
@@ -327,7 +325,6 @@ func TestOrchestratorRunAgent(t *testing.T) {
 			},
 			expectError:     false,
 			expectedContent: "Hello",
-			expectTool:      false,
 		},
 		{
 			name: "JSON tool call response",
@@ -350,9 +347,8 @@ func TestOrchestratorRunAgent(t *testing.T) {
 					},
 				},
 			},
-			expectError:  false,
-			expectTool:   true,
-			expectedTool: "calculator",
+			expectError:     false,
+			expectedContent: "30",
 		},
 		{
 			name:     "Invalid JSON response",
@@ -368,7 +364,6 @@ func TestOrchestratorRunAgent(t *testing.T) {
 			},
 			expectError:     false,
 			expectedContent: `{"content": "Hello"`,
-			expectTool:      false,
 		},
 	}
 
@@ -409,36 +404,14 @@ func TestOrchestratorRunAgent(t *testing.T) {
 					)
 				}
 
-				if testCase.expectTool {
-
-					if response.ToolCall == nil {
-						t.Fatalf("Expected tool call, but got nil")
-					}
-
-					if response.ToolCall.Tool != testCase.expectedTool {
-						t.Fatalf(
-							"Expected tool %q, got %q",
-							testCase.expectedTool,
-							response.ToolCall.Tool,
-						)
-					}
-
-					fmt.Printf(
-						"Tool call correctly parsed: %s\n",
-						response.ToolCall.Tool,
-					)
-
-				} else {
-
-					if response.ToolCall != nil {
-						t.Fatalf("Expected no tool call")
-					}
-
-					fmt.Printf(
-						"Agent response: %s\n",
-						response.Content,
-					)
+				if response.ToolCall != nil {
+					t.Fatalf("Expected no tool call after tool execution")
 				}
+
+				fmt.Printf(
+					"Agent response: %s\n",
+					response.Content,
+				)
 			}
 
 			if testCase.expectError {

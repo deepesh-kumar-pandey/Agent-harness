@@ -53,7 +53,6 @@ func (o *DefaultOrchestrator) Chat(
 func (o *DefaultOrchestrator) AssignTool(
 	toolCall ToolCall,
 ) (any, error) {
-
 	return o.agentClient.ExecuteTool(
 		toolCall.Tool,
 		toolCall.Args,
@@ -82,6 +81,25 @@ func (o *DefaultOrchestrator) RunAgent(request providerpkg.ChatRequest) (AgentRe
 	} else {
 		// Plain text is a valid provider response with no tool call.
 		agentResponse.Content = response.Content
+	}
+
+	// Execute the requested tool.
+	if agentResponse.ToolCall != nil {
+
+		result, err := o.AssignTool(
+			*agentResponse.ToolCall,
+		)
+
+		if err != nil {
+			return AgentResponse{}, fmt.Errorf(
+				"failed to execute tool: %w",
+				err,
+			)
+		}
+
+		return AgentResponse{
+			Content: fmt.Sprintf("%v", result),
+		}, nil
 	}
 
 	// Return the structured agent response.
