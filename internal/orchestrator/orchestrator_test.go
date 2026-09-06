@@ -194,3 +194,93 @@ func TestOrchestratorChat(t *testing.T) {
 
 	fmt.Println("Orchestrator Chat tests completed!")
 }
+
+// ─────────────────────────────────────────────
+// Test Orchestrator AssignTool
+// ─────────────────────────────────────────────
+
+func TestOrchestratorAssignTool(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator AssignTool tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	testCases := []struct {
+		name        string
+		toolCall    ToolCall
+		expectError bool
+	}{
+		{
+			name: "Assign calculator tool",
+			toolCall: ToolCall{
+				Tool: "calculator",
+				Args: map[string]any{
+					"operation": "add",
+					"numbers":   []float64{10, 20},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Assign shell tool",
+			toolCall: ToolCall{
+				Tool: "shell",
+				Args: map[string]any{
+					"command": "echo",
+					"args":    []string{"Hello"},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Assign unknown tool",
+			toolCall: ToolCall{
+				Tool: "unknown",
+				Args: map[string]any{},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		t.Run(testCase.name, func(t *testing.T) {
+
+			fmt.Printf("Running test: %s\n", testCase.name)
+
+			result, err := testOrchestrator.AssignTool(
+				testCase.toolCall,
+			)
+
+			if testCase.expectError && err == nil {
+				t.Fatalf("Expected an error, but got nil")
+			}
+
+			if !testCase.expectError && err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if !testCase.expectError {
+				fmt.Printf(
+					"Tool assigned successfully: %v\n",
+					result,
+				)
+			} else {
+				fmt.Printf(
+					"Error correctly returned: %v\n",
+					err,
+				)
+			}
+		})
+	}
+
+	fmt.Println("Orchestrator AssignTool tests completed!")
+}
