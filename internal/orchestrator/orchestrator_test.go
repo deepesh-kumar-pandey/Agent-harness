@@ -14,16 +14,22 @@ import (
 // ─────────────────────────────────────────────
 
 type FakeProvider struct {
-	Response string
+	Response  string
+	Responses []string
+	Index     int
 }
 
 func (f *FakeProvider) Chat(
 	request providerpkg.ChatRequest,
 ) (providerpkg.ChatResponse, error) {
 
-	return providerpkg.ChatResponse{
-		Content: f.Response,
-	}, nil
+	if len(f.Responses) > 0 {
+		response := f.Responses[f.Index]
+		f.Index++
+		return providerpkg.ChatResponse{Content: response}, nil
+	}
+
+	return providerpkg.ChatResponse{Content: f.Response}, nil
 }
 
 // ─────────────────────────────────────────────
@@ -373,8 +379,9 @@ func TestOrchestratorRunAgent(t *testing.T) {
 
 			fmt.Printf("Running test: %s\n", testCase.name)
 
-			fakeProvider := &FakeProvider{
-				Response: testCase.response,
+			fakeProvider := &FakeProvider{Response: testCase.response}
+			if testCase.name == "JSON tool call response" {
+				fakeProvider.Responses = []string{testCase.response, "30"}
 			}
 
 			testOrchestrator := NewOrchestrator(
