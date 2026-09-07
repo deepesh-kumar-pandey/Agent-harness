@@ -108,6 +108,12 @@ Run the Ollama integration test when a local Ollama service is running:
 go test -v -run TestOllamaProvider_Integration ./internal/provider
 ```
 
+Run the orchestrator integration test when Ollama and the configured model are available:
+
+```bash
+ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./internal/orchestrator -v
+```
+
 #### 3. Agent (Implemented)
 - Represents the high-level AI agent interface.
 - Receives a Tool Registry during construction.
