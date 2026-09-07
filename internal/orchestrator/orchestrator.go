@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	agentpkg "agent-harness/internal/agent"
 	providerpkg "agent-harness/internal/provider"
@@ -16,19 +17,38 @@ type Orchestrator interface {
 type DefaultOrchestrator struct {
 	agentClient    *agentpkg.Agent
 	providerClient providerpkg.Provider
+	maxToolCalls   int
+}
+
+type OrchestratorOption func(*DefaultOrchestrator)
+
+func WithMaxToolCalls(maxToolCalls int) OrchestratorOption {
+	return func(orchestrator *DefaultOrchestrator) {
+		if maxToolCalls > 0 {
+			orchestrator.maxToolCalls = maxToolCalls
+		}
+	}
 }
 
 func NewOrchestrator(
 	agentClient *agentpkg.Agent,
 	providerClient providerpkg.Provider,
+	options ...OrchestratorOption,
 ) *DefaultOrchestrator {
 
 	fmt.Println("🚀 Creating Orchestrator...")
 
-	return &DefaultOrchestrator{
+	orchestrator := &DefaultOrchestrator{
 		agentClient:    agentClient,
 		providerClient: providerClient,
+		maxToolCalls:   10,
 	}
+
+	for _, option := range options {
+		option(orchestrator)
+	}
+
+	return orchestrator
 }
 
 func (o *DefaultOrchestrator) Run(
@@ -60,36 +80,38 @@ func (o *DefaultOrchestrator) AssignTool(
 }
 
 func (o *DefaultOrchestrator) RunAgent(request providerpkg.ChatRequest) (AgentResponse, error) {
-
-	// Send the request to the LLM provider.
-	response, err := o.providerClient.Chat(request)
-	if err != nil {
-		return AgentResponse{}, err
-	}
-
-	// Decode structured tool-call responses when the provider returns JSON.
-	var agentResponse AgentResponse
-
-	if json.Valid([]byte(response.Content)) {
-		err = json.Unmarshal([]byte(response.Content), &agentResponse)
+	for toolCallCount := 0; toolCallCount <= o.maxToolCalls; toolCallCount++ {
+		response, err := o.providerClient.Chat(request)
 		if err != nil {
+			return AgentResponse{}, err
+		}
+
+		var agentResponse AgentResponse
+		trimmedContent := strings.TrimSpace(response.Content)
+		if strings.HasPrefix(trimmedContent, "{") && json.Valid([]byte(trimmedContent)) {
+			err = json.Unmarshal([]byte(response.Content), &agentResponse)
+			if err != nil {
+				return AgentResponse{}, fmt.Errorf(
+					"failed to parse agent response: %w",
+					err,
+				)
+			}
+		} else {
+			agentResponse.Content = response.Content
+		}
+
+		if agentResponse.ToolCall == nil {
+			return agentResponse, nil
+		}
+
+		if toolCallCount == o.maxToolCalls {
 			return AgentResponse{}, fmt.Errorf(
-				"failed to parse agent response: %w",
-				err,
+				"maximum tool-call limit (%d) exceeded",
+				o.maxToolCalls,
 			)
 		}
-	} else {
-		// Plain text is a valid provider response with no tool call.
-		agentResponse.Content = response.Content
-	}
 
-	// Execute the requested tool.
-	if agentResponse.ToolCall != nil {
-
-		result, err := o.AssignTool(
-			*agentResponse.ToolCall,
-		)
-
+		result, err := o.AssignTool(*agentResponse.ToolCall)
 		if err != nil {
 			return AgentResponse{}, fmt.Errorf(
 				"failed to execute tool: %w",
@@ -97,11 +119,14 @@ func (o *DefaultOrchestrator) RunAgent(request providerpkg.ChatRequest) (AgentRe
 			)
 		}
 
-		return AgentResponse{
-			Content: fmt.Sprintf("%v", result),
-		}, nil
+		request.Messages = append(request.Messages,
+			providerpkg.Message{Role: "assistant", Content: response.Content},
+			providerpkg.Message{
+				Role:    "tool",
+				Content: fmt.Sprintf("%v", result),
+			},
+		)
 	}
 
-	// Return the structured agent response.
-	return agentResponse, nil
+	return AgentResponse{}, fmt.Errorf("agent loop terminated unexpectedly")
 }
