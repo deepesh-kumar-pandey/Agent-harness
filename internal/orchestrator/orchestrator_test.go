@@ -14,7 +14,6 @@ import (
 // ─────────────────────────────────────────────
 
 type FakeProvider struct {
-	Response  string
 	Responses []string
 	Index     int
 }
@@ -23,13 +22,18 @@ func (f *FakeProvider) Chat(
 	request providerpkg.ChatRequest,
 ) (providerpkg.ChatResponse, error) {
 
-	if len(f.Responses) > 0 {
-		response := f.Responses[f.Index]
-		f.Index++
-		return providerpkg.ChatResponse{Content: response}, nil
+	if f.Index >= len(f.Responses) {
+		return providerpkg.ChatResponse{}, fmt.Errorf(
+			"fake provider has no more responses",
+		)
 	}
 
-	return providerpkg.ChatResponse{Content: f.Response}, nil
+	response := f.Responses[f.Index]
+	f.Index++
+
+	return providerpkg.ChatResponse{
+		Content: response,
+	}, nil
 }
 
 // ─────────────────────────────────────────────
@@ -44,7 +48,9 @@ func TestOrchestratorRun(t *testing.T) {
 	testAgent := agentpkg.NewAgent(registry)
 
 	fakeProvider := &FakeProvider{
-		Response: "Fake response",
+		Responses: []string{
+			"Fake response",
+		},
 	}
 
 	testOrchestrator := NewOrchestrator(
@@ -132,7 +138,9 @@ func TestOrchestratorChat(t *testing.T) {
 	testAgent := agentpkg.NewAgent(registry)
 
 	fakeProvider := &FakeProvider{
-		Response: "Fake response",
+		Responses: []string{
+			"Fake response",
+		},
 	}
 
 	testOrchestrator := NewOrchestrator(
@@ -219,7 +227,9 @@ func TestOrchestratorAssignTool(t *testing.T) {
 	testAgent := agentpkg.NewAgent(registry)
 
 	fakeProvider := &FakeProvider{
-		Response: "Fake response",
+		Responses: []string{
+			"Fake response",
+		},
 	}
 
 	testOrchestrator := NewOrchestrator(
@@ -312,14 +322,16 @@ func TestOrchestratorRunAgent(t *testing.T) {
 
 	testCases := []struct {
 		name            string
-		response        string
+		responses       []string
 		request         providerpkg.ChatRequest
 		expectError     bool
 		expectedContent string
 	}{
 		{
-			name:     "Plain text response",
-			response: "Hello",
+			name: "Plain text response",
+			responses: []string{
+				"Hello",
+			},
 			request: providerpkg.ChatRequest{
 				Model: "test-model",
 				Messages: []providerpkg.Message{
@@ -334,16 +346,19 @@ func TestOrchestratorRunAgent(t *testing.T) {
 		},
 		{
 			name: "JSON tool call response",
-			response: `{
-				"content": "",
-				"tool_call": {
-					"tool": "calculator",
-					"args": {
-						"operation": "add",
-						"numbers": [10, 20]
+			responses: []string{
+				`{
+					"content": "",
+					"tool_call": {
+						"tool": "calculator",
+						"args": {
+							"operation": "add",
+							"numbers": [10, 20]
+						}
 					}
-				}
-			}`,
+				}`,
+				"30",
+			},
 			request: providerpkg.ChatRequest{
 				Model: "test-model",
 				Messages: []providerpkg.Message{
@@ -357,8 +372,10 @@ func TestOrchestratorRunAgent(t *testing.T) {
 			expectedContent: "30",
 		},
 		{
-			name:     "Invalid JSON response",
-			response: `{"content": "Hello"`,
+			name: "Invalid JSON response",
+			responses: []string{
+				`{"content": "Hello"`,
+			},
 			request: providerpkg.ChatRequest{
 				Model: "test-model",
 				Messages: []providerpkg.Message{
@@ -379,9 +396,8 @@ func TestOrchestratorRunAgent(t *testing.T) {
 
 			fmt.Printf("Running test: %s\n", testCase.name)
 
-			fakeProvider := &FakeProvider{Response: testCase.response}
-			if testCase.name == "JSON tool call response" {
-				fakeProvider.Responses = []string{testCase.response, "30"}
+			fakeProvider := &FakeProvider{
+				Responses: testCase.responses,
 			}
 
 			testOrchestrator := NewOrchestrator(
@@ -431,4 +447,90 @@ func TestOrchestratorRunAgent(t *testing.T) {
 	}
 
 	fmt.Println("Orchestrator RunAgent tests completed!")
+}
+
+// ─────────────────────────────────────────────
+// Test Orchestrator Max Tool Calls
+// ─────────────────────────────────────────────
+
+func TestOrchestratorMaxToolCalls(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator Max Tool Calls tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			`{
+				"content": "",
+				"tool_call": {
+					"tool": "calculator",
+					"args": {
+						"operation": "add",
+						"numbers": [10, 20]
+					}
+				}
+			}`,
+			`{
+				"content": "",
+				"tool_call": {
+					"tool": "calculator",
+					"args": {
+						"operation": "add",
+						"numbers": [30, 40]
+					}
+				}
+			}`,
+			`{
+				"content": "",
+				"tool_call": {
+					"tool": "calculator",
+					"args": {
+						"operation": "add",
+						"numbers": [50, 60]
+					}
+				}
+			}`,
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+		WithMaxToolCalls(2),
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Keep calculating",
+			},
+		},
+	}
+
+	_, err := testOrchestrator.RunAgent(request)
+
+	if err == nil {
+		t.Fatalf("Expected maximum tool-call error, but got nil")
+	}
+
+	expectedError := "maximum tool-call limit (2) exceeded"
+
+	if err.Error() != expectedError {
+		t.Fatalf(
+			"Expected error %q, got %q",
+			expectedError,
+			err.Error(),
+		)
+	}
+
+	fmt.Printf(
+		"Max tool-call limit correctly enforced: %v\n",
+		err,
+	)
+
+	fmt.Println("Orchestrator Max Tool Calls tests completed!")
 }

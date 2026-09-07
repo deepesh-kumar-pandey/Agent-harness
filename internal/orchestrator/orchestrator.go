@@ -36,7 +36,7 @@ func NewOrchestrator(
 	options ...OrchestratorOption,
 ) *DefaultOrchestrator {
 
-	fmt.Println("🚀 Creating Orchestrator...")
+	fmt.Println("Creating Orchestrator...")
 
 	orchestrator := &DefaultOrchestrator{
 		agentClient:    agentClient,
@@ -56,7 +56,7 @@ func (o *DefaultOrchestrator) Run(
 	args map[string]any,
 ) (any, error) {
 
-	fmt.Printf("🔧 Orchestrator executing tool: %s\n", name)
+	fmt.Printf("Orchestrator executing tool: %s\n", name)
 
 	return o.agentClient.ExecuteTool(name, args)
 }
@@ -65,7 +65,7 @@ func (o *DefaultOrchestrator) Chat(
 	request providerpkg.ChatRequest,
 ) (providerpkg.ChatResponse, error) {
 
-	fmt.Println(" Orchestrator sending request to Provider...")
+	fmt.Println("Orchestrator sending request to Provider...")
 
 	return o.providerClient.Chat(request)
 }
@@ -73,45 +73,71 @@ func (o *DefaultOrchestrator) Chat(
 func (o *DefaultOrchestrator) AssignTool(
 	toolCall ToolCall,
 ) (any, error) {
+
 	return o.agentClient.ExecuteTool(
 		toolCall.Tool,
 		toolCall.Args,
 	)
 }
 
-func (o *DefaultOrchestrator) RunAgent(request providerpkg.ChatRequest) (AgentResponse, error) {
-	for toolCallCount := 0; toolCallCount <= o.maxToolCalls; toolCallCount++ {
-		response, err := o.providerClient.Chat(request)
+func (o *DefaultOrchestrator) RunAgent(
+	request providerpkg.ChatRequest,
+) (AgentResponse, error) {
+
+	toolCallCount := 0
+
+	for {
+
+		// Send the request to the LLM provider.
+		response, err := o.Chat(request)
 		if err != nil {
 			return AgentResponse{}, err
 		}
 
+		// Decode the provider response.
 		var agentResponse AgentResponse
+
 		trimmedContent := strings.TrimSpace(response.Content)
-		if strings.HasPrefix(trimmedContent, "{") && json.Valid([]byte(trimmedContent)) {
-			err = json.Unmarshal([]byte(response.Content), &agentResponse)
+
+		if strings.HasPrefix(trimmedContent, "{") &&
+			json.Valid([]byte(trimmedContent)) {
+
+			err = json.Unmarshal(
+				[]byte(response.Content),
+				&agentResponse,
+			)
+
 			if err != nil {
 				return AgentResponse{}, fmt.Errorf(
 					"failed to parse agent response: %w",
 					err,
 				)
 			}
+
 		} else {
+
+			// Plain text is a valid provider response.
 			agentResponse.Content = response.Content
 		}
 
+		// No tool call means the LLM has produced the final answer.
 		if agentResponse.ToolCall == nil {
 			return agentResponse, nil
 		}
 
-		if toolCallCount == o.maxToolCalls {
+		// Check whether the maximum number of tool calls has been reached.
+		if toolCallCount >= o.maxToolCalls {
 			return AgentResponse{}, fmt.Errorf(
 				"maximum tool-call limit (%d) exceeded",
 				o.maxToolCalls,
 			)
 		}
 
-		result, err := o.AssignTool(*agentResponse.ToolCall)
+		// Execute the requested tool.
+		result, err := o.AssignTool(
+			*agentResponse.ToolCall,
+		)
+
 		if err != nil {
 			return AgentResponse{}, fmt.Errorf(
 				"failed to execute tool: %w",
@@ -119,14 +145,20 @@ func (o *DefaultOrchestrator) RunAgent(request providerpkg.ChatRequest) (AgentRe
 			)
 		}
 
-		request.Messages = append(request.Messages,
-			providerpkg.Message{Role: "assistant", Content: response.Content},
+		toolCallCount++
+
+		// Add the assistant's tool-call response
+		// and the tool result to the conversation.
+		request.Messages = append(
+			request.Messages,
+			providerpkg.Message{
+				Role:    "assistant",
+				Content: response.Content,
+			},
 			providerpkg.Message{
 				Role:    "tool",
 				Content: fmt.Sprintf("%v", result),
 			},
 		)
 	}
-
-	return AgentResponse{}, fmt.Errorf("agent loop terminated unexpectedly")
 }
