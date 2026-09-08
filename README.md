@@ -195,6 +195,11 @@ Maintains a centralized collection of available tools. It acts as the directory/
   - Error: Returns `fmt.Errorf("tool %q not found", name)` if the tool is not registered.
   - Usage: Used to deregister tools dynamically at runtime.
 
+- **`Schemas() ([]map[string]any, error)`**
+  - Returns the name, description, and argument schema for every registered tool.
+  - Returns an error if the registry is nil, a registered tool is nil, or a tool returns a nil schema.
+  - Usage: Used to expose tool capabilities to callers such as an LLM provider.
+
 #### 8. Tool Interface (Implemented)
 Defines the common contract that all tools must implement. This allows the Registry and Orchestrator to work with any tool without coupling to concrete implementations.
 
@@ -204,6 +209,7 @@ type Tool interface {
     Name() string
     Description() string
     Execute(args map[string]any) (any, error)
+  Schema() map[string]any
 }
 ```
 
@@ -223,6 +229,10 @@ type Tool interface {
     - `args`: A map of argument names to values. The specific keys and types depend on the tool.
   - Returns: The result of the operation, or an error if execution fails.
   - Usage: Called by the Orchestrator to perform the requested task.
+
+- **`Schema() map[string]any`**
+  - Returns the expected argument names and types for the tool.
+  - Usage: Used by `ToolRegistry.Schemas()` to describe available tools.
 
 #### 9. Concrete Tools (Partially Implemented)
 
@@ -245,6 +255,8 @@ The Calculator is the first concrete tool implementation. It performs basic arit
     - `"numbers"` ([]float64 or JSON-decoded numeric array): The operands for the operation.
   - Returns: The numeric result, or an error if inputs are invalid or division by zero occurs.
   - Example: `calculator.Execute(map[string]any{"operation": "add", "numbers": []float64{2, 3, 5}})`
+- **`Schema() map[string]any`**: Returns the expected `operation` and `numbers` argument types.
+- Input validation rejects nil arguments, missing or empty operations, invalid number arrays, and empty number arrays.
 
 **Arithmetic Methods**:
 - **`Add(numbers ...float64) (float64, error)`**
@@ -379,8 +391,8 @@ The `Tool` interface allows tools to be added and retrieved without type couplin
 |-----------|--------|---------|
 | Config Layer | ✅ Implemented | `config/config.go` loads and validates provider configuration from `config/config.json` |
 | Provider Layer | ✅ Implemented | Ollama chat provider with validation, HTTP requests, response decoding, and testable dependencies |
-| Tool Interface | ✅ Implemented | Defines `Name()`, `Description()`, `Execute()` |
-| Tool Registry | ✅ Implemented | Full CRUD operations: `Register`, `Get`, `Has`, `List`, `Remove` |
+| Tool Interface | ✅ Implemented | Defines `Name()`, `Description()`, `Execute()`, and `Schema()` |
+| Tool Registry | ✅ Implemented | Tool registration, lookup, removal, listing, and schema discovery with error handling |
 | Calculator Tool | ✅ Implemented | Supports `add`, `subtract`, `multiply`, `divide`, `modulus` operations |
 | Agent | ✅ Implemented | Executes named tools through `Run` and `ExecuteTool`; planning and LLM orchestration are planned |
 | Orchestrator | ✅ Implemented | Runs tools, forwards provider requests, parses responses, and executes requested tool calls |

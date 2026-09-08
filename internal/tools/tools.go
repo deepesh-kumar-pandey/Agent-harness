@@ -6,6 +6,7 @@ type Tool interface {
 	Name() string
 	Description() string
 	Execute(args map[string]any) (any, error)
+	Schema() map[string]any
 }
 
 func (c Calculator) Name() string {
@@ -17,15 +18,21 @@ func (c Calculator) Description() string {
 }
 
 func (c Calculator) Execute(args map[string]any) (any, error) {
-	operation, ok := args["operation"].(string)
+	if args == nil {
+		return nil, fmt.Errorf("args must not be nil")
+	}
 
-	if !ok {
-		return nil, fmt.Errorf("operation must be a string")
+	operation, ok := args["operation"].(string)
+	if !ok || operation == "" {
+		return nil, fmt.Errorf("operation must be a non-empty string")
 	}
 
 	numbers, err := decimalNumbers(args["numbers"])
 	if err != nil {
 		return nil, err
+	}
+	if len(numbers) == 0 {
+		return nil, fmt.Errorf("numbers must contain at least one number")
 	}
 
 	switch operation {
@@ -63,5 +70,12 @@ func decimalNumbers(value any) ([]float64, error) {
 		return result, nil
 	default:
 		return nil, fmt.Errorf("numbers must be an array of numbers")
+	}
+}
+
+func (c Calculator) Schema() map[string]any {
+	return map[string]any{
+		"operation": "string",
+		"numbers":   "array of numbers",
 	}
 }

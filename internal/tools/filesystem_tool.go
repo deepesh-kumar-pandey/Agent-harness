@@ -15,6 +15,14 @@ func (f *FilesystemTool) Description() string {
 	return "A tool for performing filesystem operations."
 }
 
+func (f *FilesystemTool) Schema() map[string]any {
+	return map[string]any{
+		"operation": "string",
+		"path":      "string",
+		"content":   "string",
+	}
+}
+
 func (f *FilesystemTool) Execute(args map[string]any) (any, error) {
 	operation, ok := args["operation"].(string)
 

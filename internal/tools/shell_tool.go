@@ -18,6 +18,13 @@ func (s *ShellTool) Description() string {
 	return "A tool for executing shell commands."
 }
 
+func (s *ShellTool) Schema() map[string]any {
+	return map[string]any{
+		"command": "string",
+		"args":    "array of strings",
+	}
+}
+
 func (s *ShellTool) Execute(args map[string]any) (any, error) {
 	command, ok := args["command"].(string)
 
@@ -46,18 +53,22 @@ func shellArgs(value any) ([]string, error) {
 
 	values, ok := value.([]any)
 	if !ok {
-		if strings, ok := value.([]string); ok {
-			return strings, nil
+		stringArgs, ok := value.([]string)
+		if ok {
+			return stringArgs, nil
 		}
+
 		return nil, fmt.Errorf("args must be an array of strings")
 	}
 
 	result := make([]string, len(values))
+
 	for index, value := range values {
 		argument, ok := value.(string)
 		if !ok {
 			return nil, fmt.Errorf("args must be an array of strings")
 		}
+
 		result[index] = argument
 	}
 

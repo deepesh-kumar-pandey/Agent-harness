@@ -277,6 +277,133 @@ func TestToolRegistryRemove(t *testing.T) {
 	}
 }
 
+func TestToolRegistrySchemas(t *testing.T) {
+	testCases := []struct {
+		name                string
+		registry            *ToolRegistry
+		expectError         bool
+		expectedCount       int
+		expectedName        string
+		expectedDescription string
+		expectedSchema      map[string]any
+	}{
+		{
+			name: "calculator schema",
+			registry: &ToolRegistry{
+				tools: map[string]Tool{
+					"calculator": &Calculator{},
+				},
+			},
+			expectError:         false,
+			expectedCount:       1,
+			expectedName:        "calculator",
+			expectedDescription: "Performs basic arithmetic operations",
+			expectedSchema: map[string]any{
+				"operation": "string",
+				"numbers":   "array of numbers",
+			},
+		},
+		{
+			name:        "nil registry",
+			registry:    nil,
+			expectError: true,
+		},
+		{
+			name: "nil tool",
+			registry: &ToolRegistry{
+				tools: map[string]Tool{
+					"broken": nil,
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "nil schema",
+			registry: &ToolRegistry{
+				tools: map[string]Tool{
+					"broken": nilSchemaTool{},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			schemas, err := testCase.registry.Schemas()
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				if schemas != nil {
+					t.Fatalf("expected no schemas, got %v", schemas)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+
+			if len(schemas) != testCase.expectedCount {
+				t.Fatalf(
+					"expected %d schema, got %d",
+					testCase.expectedCount,
+					len(schemas),
+				)
+			}
+
+			if schemas[0]["name"] != testCase.expectedName {
+				t.Fatalf(
+					"expected %s schema, got %v",
+					testCase.expectedName,
+					schemas[0],
+				)
+			}
+
+			if schemas[0]["description"] != testCase.expectedDescription {
+				t.Fatalf(
+					"expected description %q, got %v",
+					testCase.expectedDescription,
+					schemas[0]["description"],
+				)
+			}
+
+			if !reflect.DeepEqual(
+				schemas[0]["schema"],
+				testCase.expectedSchema,
+			) {
+				t.Fatalf(
+					"expected schema %v, got %v",
+					testCase.expectedSchema,
+					schemas[0]["schema"],
+				)
+			}
+		})
+	}
+}
+
+type nilSchemaTool struct{}
+
+func (nilSchemaTool) Name() string {
+	return "broken"
+}
+
+func (nilSchemaTool) Description() string {
+	return "broken tool"
+}
+
+func (nilSchemaTool) Execute(map[string]any) (any, error) {
+	return nil, nil
+}
+
+func (nilSchemaTool) Schema() map[string]any {
+	return nil
+}
+
 func stringSet(values []string) map[string]bool {
 	result := make(map[string]bool, len(values))
 

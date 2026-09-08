@@ -57,3 +57,30 @@ func (tr *ToolRegistry) Remove(name string) error {
 	delete(tr.tools, name)
 	return nil
 }
+
+func (tr *ToolRegistry) Schemas() ([]map[string]any, error) {
+	if tr == nil {
+		return nil, fmt.Errorf("tool registry must not be nil")
+	}
+
+	schemas := make([]map[string]any, 0, len(tr.tools))
+
+	for name, tool := range tr.tools {
+		if tool == nil {
+			return nil, fmt.Errorf("tool %q must not be nil", name)
+		}
+
+		schema := tool.Schema()
+		if schema == nil {
+			return nil, fmt.Errorf("tool %q returned a nil schema", name)
+		}
+
+		schemas = append(schemas, map[string]any{
+			"name":        tool.Name(),
+			"description": tool.Description(),
+			"schema":      schema,
+		})
+	}
+
+	return schemas, nil
+}

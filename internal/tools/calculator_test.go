@@ -58,3 +58,39 @@ func TestCalculator(t *testing.T) {
 		})
 	}
 }
+
+func TestCalculatorExecuteValidation(t *testing.T) {
+	calc := Calculator{}
+
+	testCases := []struct {
+		name string
+		args map[string]any
+	}{
+		{
+			name: "nil args",
+			args: nil,
+		},
+		{
+			name: "empty operation",
+			args: map[string]any{
+				"operation": "",
+				"numbers":   []float64{1, 2},
+			},
+		},
+		{
+			name: "missing operation",
+			args: map[string]any{
+				"numbers": []float64{1, 2},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := calc.Execute(testCase.args)
+			if err == nil {
+				t.Fatalf("expected validation error for %q, got nil", testCase.name)
+			}
+		})
+	}
+}
