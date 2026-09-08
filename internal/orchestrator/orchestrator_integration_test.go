@@ -1,11 +1,12 @@
 package orchestrator
 
 import (
+	"os"
+	"testing"
+
 	agentpkg "agent-harness/internal/agent"
 	providerpkg "agent-harness/internal/provider"
 	toolspkg "agent-harness/internal/tools"
-	"os"
-	"testing"
 )
 
 func TestOrchestratorRunAgent_Integration(t *testing.T) {
@@ -29,26 +30,8 @@ func TestOrchestratorRunAgent_Integration(t *testing.T) {
 		Model: "kirito1/qwen3-coder:4b",
 		Messages: []providerpkg.Message{
 			{
-				Role: "system",
-				Content: `You are an agent that can use tools.
-
-When you need to use a tool, respond ONLY with valid JSON in this format:
-
-{
-  "content": "",
-  "tool_call": {
-    "tool": "calculator",
-    "args": {
-      "operation": "add",
-      "numbers": [10, 20]
-    }
-  }
-}
-
-When you have the final answer, respond with plain text.
-
-Available tool:
-- calculator: performs mathematical calculations.`,
+				Role:    "system",
+				Content: "You are an agent that can use the available tools. Use the calculator tool when needed.",
 			},
 			{
 				Role:    "user",

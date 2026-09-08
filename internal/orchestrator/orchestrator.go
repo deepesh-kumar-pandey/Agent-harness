@@ -104,6 +104,51 @@ func (o *DefaultOrchestrator) RunAgent(
 			return AgentResponse{}, err
 		}
 
+		// Handle native provider tool calls.
+		if len(response.ToolCalls) > 0 {
+
+			toolCall := convertToolCall(
+				response.ToolCalls[0],
+			)
+
+			// Check whether the maximum number of tool calls has been reached.
+			if toolCallCount >= o.maxToolCalls {
+				return AgentResponse{}, fmt.Errorf(
+					"maximum tool-call limit (%d) exceeded",
+					o.maxToolCalls,
+				)
+			}
+
+			// Execute the requested tool.
+			result, err := o.AssignTool(toolCall)
+
+			if err != nil {
+				return AgentResponse{}, fmt.Errorf(
+					"failed to execute tool: %w",
+					err,
+				)
+			}
+
+			toolCallCount++
+
+			// Add the assistant's tool-call response
+			// and the tool result to the conversation.
+			request.Messages = append(
+				request.Messages,
+				providerpkg.Message{
+					Role:      "assistant",
+					Content:   response.Content,
+					ToolCalls: response.ToolCalls,
+				},
+				providerpkg.Message{
+					Role:    "tool",
+					Content: fmt.Sprintf("%v", result),
+				},
+			)
+
+			continue
+		}
+
 		// Decode the provider response.
 		var agentResponse AgentResponse
 
@@ -196,17 +241,26 @@ func (o *DefaultOrchestrator) GetToolDefinitions() ([]providerpkg.ToolDefinition
 			return nil, fmt.Errorf("tool schema has invalid description")
 		}
 
-		toolSchema, ok := schema["schema"].(map[string]any)
-		if !ok || toolSchema == nil {
-			return nil, fmt.Errorf("tool schema has invalid schema")
+		toolParameters, ok := schema["schema"].(map[string]any)
+		if !ok || toolParameters == nil {
+			return nil, fmt.Errorf("tool schema has invalid parameters")
 		}
 
 		definitions = append(definitions, providerpkg.ToolDefinition{
 			Name:        name,
 			Description: description,
-			Schema:      toolSchema,
+			Parameters:  toolParameters,
 		})
 	}
 
 	return definitions, nil
+}
+
+func convertToolCall(
+	toolCall providerpkg.OllamaToolCall,
+) ToolCall {
+	return ToolCall{
+		Tool: toolCall.Function.Name,
+		Args: toolCall.Function.Arguments,
+	}
 }

@@ -18,13 +18,6 @@ func (s *ShellTool) Description() string {
 	return "A tool for executing shell commands."
 }
 
-func (s *ShellTool) Schema() map[string]any {
-	return map[string]any{
-		"command": "string",
-		"args":    "array of strings",
-	}
-}
-
 func (s *ShellTool) Execute(args map[string]any) (any, error) {
 	command, ok := args["command"].(string)
 
@@ -73,4 +66,24 @@ func shellArgs(value any) ([]string, error) {
 	}
 
 	return result, nil
+}
+
+func (s *ShellTool) Schema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"command": map[string]any{
+				"type": "string",
+			},
+			"args": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "string",
+				},
+			},
+		},
+		"required": []string{
+			"command",
+		},
+	}
 }

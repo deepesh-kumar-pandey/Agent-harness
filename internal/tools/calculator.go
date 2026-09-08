@@ -70,3 +70,24 @@ func (c Calculator) Modulus(a, b float64) (float64, error) {
 
 	return math.Mod(a, b), nil
 }
+
+func (c Calculator) Schema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"operation": map[string]any{
+				"type": "string",
+			},
+			"numbers": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "number",
+				},
+			},
+		},
+		"required": []string{
+			"operation",
+			"numbers",
+		},
+	}
+}

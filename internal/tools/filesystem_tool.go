@@ -17,9 +17,29 @@ func (f *FilesystemTool) Description() string {
 
 func (f *FilesystemTool) Schema() map[string]any {
 	return map[string]any{
-		"operation": "string",
-		"path":      "string",
-		"content":   "string",
+		"type": "object",
+		"properties": map[string]any{
+			"operation": map[string]any{
+				"type": "string",
+				"enum": []string{
+					"read",
+					"write",
+					"list",
+					"exists",
+					"delete",
+				},
+			},
+			"path": map[string]any{
+				"type": "string",
+			},
+			"content": map[string]any{
+				"type": "string",
+			},
+		},
+		"required": []string{
+			"operation",
+			"path",
+		},
 	}
 }
 

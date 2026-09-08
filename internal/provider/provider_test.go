@@ -122,7 +122,7 @@ func TestChatRequestJSON(t *testing.T) {
 					{
 						Name:        "calculator",
 						Description: "A tool for performing mathematical calculations.",
-						Schema: map[string]any{
+						Parameters: map[string]any{
 							"operation": "string",
 							"numbers":   "array of numbers",
 						},

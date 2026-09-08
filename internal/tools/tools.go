@@ -72,10 +72,3 @@ func decimalNumbers(value any) ([]float64, error) {
 		return nil, fmt.Errorf("numbers must be an array of numbers")
 	}
 }
-
-func (c Calculator) Schema() map[string]any {
-	return map[string]any{
-		"operation": "string",
-		"numbers":   "array of numbers",
-	}
-}

@@ -717,8 +717,58 @@ func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
 			t.Fatal("expected tool definition to have a description")
 		}
 
-		if tool.Schema == nil {
-			t.Fatal("expected tool definition to have a schema")
+		if tool.Parameters == nil {
+			t.Fatal("expected tool definition to have parameters")
 		}
+	}
+}
+
+func TestConvertToolCall(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    providerpkg.OllamaToolCall
+		expected ToolCall
+	}{
+		{
+			name: "Convert calculator tool call",
+			input: providerpkg.OllamaToolCall{
+				Function: providerpkg.OllamaFunction{
+					Name: "calculator",
+					Arguments: map[string]any{
+						"operation": "add",
+						"numbers":   []any{10.0, 20.0},
+					},
+				},
+			},
+			expected: ToolCall{
+				Tool: "calculator",
+				Args: map[string]any{
+					"operation": "add",
+					"numbers":   []any{10.0, 20.0},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			result := convertToolCall(testCase.input)
+
+			if result.Tool != testCase.expected.Tool {
+				t.Fatalf(
+					"expected tool %q, got %q",
+					testCase.expected.Tool,
+					result.Tool,
+				)
+			}
+
+			if len(result.Args) != len(testCase.expected.Args) {
+				t.Fatalf(
+					"expected %d arguments, got %d",
+					len(testCase.expected.Args),
+					len(result.Args),
+				)
+			}
+		})
 	}
 }

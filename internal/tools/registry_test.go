@@ -299,8 +299,22 @@ func TestToolRegistrySchemas(t *testing.T) {
 			expectedName:        "calculator",
 			expectedDescription: "Performs basic arithmetic operations",
 			expectedSchema: map[string]any{
-				"operation": "string",
-				"numbers":   "array of numbers",
+				"type": "object",
+				"properties": map[string]any{
+					"operation": map[string]any{
+						"type": "string",
+					},
+					"numbers": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "number",
+						},
+					},
+				},
+				"required": []string{
+					"operation",
+					"numbers",
+				},
 			},
 		},
 		{
