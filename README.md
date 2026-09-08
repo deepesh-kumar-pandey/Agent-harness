@@ -118,9 +118,10 @@ ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./i
 - Represents the high-level AI agent interface.
 - Receives a Tool Registry during construction.
 - Retrieves a named tool and forwards the provided arguments to its `Execute()` method.
+- `GetToolSchemas()` returns the registered tool names, descriptions, and argument schemas, or an error when the registry contains invalid tool metadata.
 - `Run(name, args)` is the public execution entry point and delegates to `ExecuteTool`.
 - Returns the tool result or execution error to the caller.
-- **Tests**: `internal/agent/agent_test.go` covers agent construction, calculator and shell execution, unknown tools, and `Run`.
+- **Tests**: `internal/agent/agent_test.go` covers agent construction, calculator and shell execution, unknown tools, `Run`, and tool schema retrieval.
 - **Status**: Tool-execution logic implemented; task planning and LLM orchestration are planned.
 
 #### 4. Orchestrator (Implemented)

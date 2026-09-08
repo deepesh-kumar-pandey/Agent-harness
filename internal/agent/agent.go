@@ -14,6 +14,10 @@ func NewAgent(registry *tools.ToolRegistry) *Agent {
 	}
 }
 
+func (a *Agent) GetToolSchemas() ([]map[string]any, error) {
+	return a.registry.Schemas()
+}
+
 func (a *Agent) ExecuteTool(name string, args map[string]any) (any, error) {
 	tool, err := a.registry.Get(name)
 

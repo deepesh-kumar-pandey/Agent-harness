@@ -236,3 +236,56 @@ func TestRun(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentGetToolSchemas(t *testing.T) {
+	testCases := []struct {
+		name          string
+		registry      *tools.ToolRegistry
+		expectError   bool
+		expectedCount int
+	}{
+		{
+			name:          "Get registered tool schemas",
+			registry:      tools.NewToolRegistry(),
+			expectError:   false,
+			expectedCount: 3,
+		},
+		{
+			name:        "Nil registry",
+			registry:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			agent := NewAgent(testCase.registry)
+
+			schemas, err := agent.GetToolSchemas()
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				if schemas != nil {
+					t.Fatalf("expected no schemas, got %v", schemas)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+
+			if len(schemas) != testCase.expectedCount {
+				t.Fatalf(
+					"expected %d schemas, got %d",
+					testCase.expectedCount,
+					len(schemas),
+				)
+			}
+		})
+	}
+}
