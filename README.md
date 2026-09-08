@@ -22,32 +22,20 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 - **Today**: Added `RunAgent`, which accepts plain text or structured JSON provider responses, executes requested tool calls, and returns tool results.
 - **Today**: Added comprehensive Orchestrator tests for direct tool execution, provider chat, tool assignment, plain text, JSON tool calls, invalid JSON, and tool execution through `RunAgent`.
 - **Today**: Updated the Calculator to accept both direct `[]float64` arguments and JSON-decoded numeric arrays.
+- **Today**: Added native Ollama tool calling support with provider-neutral `ToolDefinition` values and Ollama-specific request conversion.
+- **Today**: Added JSON Schema support for tool parameters and updated the Calculator, ShellTool, and FilesystemTool schemas to proper JSON Schema.
+- **Today**: Updated `RunAgent()` with native provider tool-call handling, tool execution through the Orchestrator, tool-result feedback to the provider, and maximum tool-call protection through `WithMaxToolCalls`.
+- **Today**: Added and updated tests for Ollama request conversion, native tool-call conversion, tool schemas, Agent/Orchestrator tool definitions, and Ollama integration. Native Ollama tool calling has been tested end-to-end with the local Ollama integration test.
 
 ## Architecture
 
 The Agent Harness is built around a **layered tool-execution architecture** that emphasizes separation of concerns and extensibility:
 
 ```
-config/config.json
-    ↓
-Config Layer (Implemented)
-    ↓
-Provider Layer (Implemented)
-    ↓
-  Agent (Implemented)
-    ↓
-  Orchestrator (Implemented)
-    ↓
-Tool Registry (Implemented)
-    ↓
-Tool Interface (Implemented)
-    ↓
-Concrete Tools
-  ├── Calculator (Implemented)
-  ├── Shell (Implemented)
-  ├── File System (Implemented)
-  └── Future tools (Search, etc.)
+Config → Provider → Agent → Orchestrator → Tool Registry → Tools
 ```
+
+Configuration is loaded from `config/config.json`, the Provider communicates with the LLM, the Agent exposes registered tool capabilities, the Orchestrator coordinates requests and tool calls, the Tool Registry manages available tools, and the Tools perform concrete operations.
 
 ### Architecture Layers and Responsibilities
 
@@ -89,11 +77,13 @@ go test -v ./config
 #### 2. Provider Layer (Implemented)
 - Manages connections to LLM providers (e.g., Ollama, OpenAI, etc.).
 - The Ollama implementation sends chat requests to `/api/chat` and decodes the returned assistant message.
+- Supports native Ollama tool calling by converting provider-neutral `ToolDefinition` values into Ollama function-tool request definitions.
 - Validates that a model and at least one message are provided before making a network request.
 - Supports configurable `BaseURL` and `http.Client` values so tests do not need a running external service.
 - Acts as the bridge between the Agent and external AI services.
-- **Implemented types**: `Provider`, `ChatRequest`, `Message`, `ChatResponse`, and `OllamaProvider`.
-- **Tests**: `internal/provider/provider_test.go` covers request validation and the provider response path using `httptest`.
+- **Implemented types**: `Provider`, `ToolDefinition`, `ChatRequest`, `Message`, `ChatResponse`, Ollama request/response tool-call types, and `OllamaProvider`.
+- **Tool parameters**: Provider-neutral definitions expose JSON Schema through `ToolDefinition.Parameters`.
+- **Tests**: `internal/provider/provider_test.go` covers request validation, Ollama request conversion, and the provider response path using `httptest`.
 - **Integration test**: `internal/provider/provider_integration_test.go` verifies communication with a local Ollama instance.
 
 Run provider unit tests from the repository root with:
@@ -119,22 +109,25 @@ ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./i
 - Receives a Tool Registry during construction.
 - Retrieves a named tool and forwards the provided arguments to its `Execute()` method.
 - `GetToolSchemas()` returns the registered tool names, descriptions, and argument schemas, or an error when the registry contains invalid tool metadata.
+- `GetToolDefinitions()` converts registered tool schemas into provider-neutral `ToolDefinition` values for the Provider layer.
 - `Run(name, args)` is the public execution entry point and delegates to `ExecuteTool`.
 - Returns the tool result or execution error to the caller.
 - **Tests**: `internal/agent/agent_test.go` covers agent construction, calculator and shell execution, unknown tools, `Run`, and tool schema retrieval.
-- **Status**: Tool-execution logic implemented; task planning and LLM orchestration are planned.
+- **Status**: Tool-execution logic and tool-definition exposure implemented.
 
 #### 4. Orchestrator (Implemented)
 - Acts as the central coordinator of the agent workflow.
 - `Run(name, args)` executes a named tool through the Agent.
 - `Chat(request)` forwards chat requests to the configured Provider.
 - `AssignTool(toolCall)` executes a structured `ToolCall` through the Agent.
-- `RunAgent(request)` sends a request to the Provider, parses the response, executes a requested tool, and returns the result.
-- Supports both plain-text responses and structured JSON responses.
+- `RunAgent(request)` sends a request to the Provider, parses responses, handles native provider tool calls, executes requested tools through the Agent, and sends tool results back to the Provider.
+- Supports both plain-text/structured JSON responses and native Ollama tool-call responses.
+- Applies maximum tool-call protection through `WithMaxToolCalls`.
+- Converts registered tool schemas into provider-neutral tool definitions before sending requests.
 - Uses `json.Valid()` before unmarshalling structured responses.
 - Wraps provider, parsing, and tool execution errors with context.
 - **Key distinction**: The Orchestrator is responsible for **coordinating execution** and **workflow decisions**, while the Registry is only responsible for **managing tools**.
-- **Status**: Implemented; the multi-turn agent loop is the next milestone.
+- **Status**: Implemented, including native provider tool-call execution and tool-result feedback.
 
 #### 5. Agent Response Contract (Implemented)
 - Defined in `internal/orchestrator/response.go`.
@@ -142,9 +135,9 @@ ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./i
 - `AgentResponse` contains response content and an optional tool call.
 - JSON tags map structured provider responses to `content` and `tool_call`.
 
-#### 6. Agent Loop (Planned)
-- Planned flow: LLM response -> `ToolCall` -> execute tool -> send the tool result back to the LLM -> final response.
-- The current `RunAgent` implementation executes one requested tool and returns its result; it does not yet implement the multi-turn loop.
+#### 6. Agent Loop (Implemented)
+- Flow: Provider response -> native tool call or structured `ToolCall` -> execute tool -> send the tool result back to the Provider -> final response.
+- `RunAgent` repeats the loop until the Provider returns a final response or the configured maximum tool-call limit is reached.
 
 #### 7. Tool Registry (Implemented)
 Maintains a centralized collection of available tools. It acts as the directory/lookup layer that allows the Orchestrator to find and retrieve tools by name.
@@ -197,7 +190,7 @@ Maintains a centralized collection of available tools. It acts as the directory/
   - Usage: Used to deregister tools dynamically at runtime.
 
 - **`Schemas() ([]map[string]any, error)`**
-  - Returns the name, description, and argument schema for every registered tool.
+  - Returns the name, description, and JSON Schema argument definition for every registered tool.
   - Returns an error if the registry is nil, a registered tool is nil, or a tool returns a nil schema.
   - Usage: Used to expose tool capabilities to callers such as an LLM provider.
 
@@ -232,7 +225,7 @@ type Tool interface {
   - Usage: Called by the Orchestrator to perform the requested task.
 
 - **`Schema() map[string]any`**
-  - Returns the expected argument names and types for the tool.
+  - Returns the tool's arguments as a JSON Schema object.
   - Usage: Used by `ToolRegistry.Schemas()` to describe available tools.
 
 #### 9. Concrete Tools (Partially Implemented)
@@ -256,7 +249,7 @@ The Calculator is the first concrete tool implementation. It performs basic arit
     - `"numbers"` ([]float64 or JSON-decoded numeric array): The operands for the operation.
   - Returns: The numeric result, or an error if inputs are invalid or division by zero occurs.
   - Example: `calculator.Execute(map[string]any{"operation": "add", "numbers": []float64{2, 3, 5}})`
-- **`Schema() map[string]any`**: Returns the expected `operation` and `numbers` argument types.
+- **`Schema() map[string]any`**: Returns a JSON Schema object for the `operation` and `numbers` parameters.
 - Input validation rejects nil arguments, missing or empty operations, invalid number arrays, and empty number arrays.
 
 **Arithmetic Methods**:
@@ -391,15 +384,16 @@ The `Tool` interface allows tools to be added and retrieved without type couplin
 | Component | Status | Details |
 |-----------|--------|---------|
 | Config Layer | ✅ Implemented | `config/config.go` loads and validates provider configuration from `config/config.json` |
-| Provider Layer | ✅ Implemented | Ollama chat provider with validation, HTTP requests, response decoding, and testable dependencies |
+| Provider Layer | ✅ Implemented | Ollama chat provider with native tool calling, provider-neutral tool definitions, JSON Schema parameters, request conversion, validation, HTTP requests, response decoding, and testable dependencies |
 | Tool Interface | ✅ Implemented | Defines `Name()`, `Description()`, `Execute()`, and `Schema()` |
 | Tool Registry | ✅ Implemented | Tool registration, lookup, removal, listing, and schema discovery with error handling |
 | Calculator Tool | ✅ Implemented | Supports `add`, `subtract`, `multiply`, `divide`, `modulus` operations |
-| Agent | ✅ Implemented | Executes named tools through `Run` and `ExecuteTool`; planning and LLM orchestration are planned |
-| Orchestrator | ✅ Implemented | Runs tools, forwards provider requests, parses responses, and executes requested tool calls |
+| Agent | ✅ Implemented | Executes named tools through `Run` and `ExecuteTool`, and exposes tool schemas and definitions |
+| Orchestrator | ✅ Implemented | Runs tools, converts tool definitions, handles native provider tool calls, loops with tool results, and enforces `WithMaxToolCalls` |
 | AgentResponse | ✅ Implemented | Defines structured response content and optional tool calls |
-| Tool execution from RunAgent | ✅ Implemented | Executes a requested tool and returns its result as response content |
-| Agent loop | 🔄 Planned | Will send tool results back to the LLM for a final response |
-| Shell Tool | ✅ Implemented | Executes shell commands and reports command or execution failures |
-| File System Tool | ✅ Implemented | Reads, writes, lists, searches, and deletes local files and directories |
+| Tool execution from RunAgent | ✅ Implemented | Executes requested native or structured tool calls and sends results back to the Provider |
+| Agent loop | ✅ Implemented | Handles native provider tool calls, tool results, final responses, and maximum tool-call protection |
+| Tool schemas | ✅ Implemented | Calculator, ShellTool, and FilesystemTool expose proper JSON Schema parameter definitions |
+| Shell Tool | ✅ Implemented | Executes shell commands, reports command or execution failures, and exposes JSON Schema parameters |
+| File System Tool | ✅ Implemented | Reads, writes, lists, searches, deletes local files and directories, and exposes JSON Schema parameters |
 | Search Tool | 🔄 Planned | Will search across data sources |
