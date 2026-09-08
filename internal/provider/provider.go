@@ -7,9 +7,16 @@ import (
 	"net/http"
 )
 
+type ToolDefinition struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Schema      map[string]any `json:"schema"`
+}
+
 type ChatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
+	Model    string           `json:"model"`
+	Messages []Message        `json:"messages"`
+	Tools    []ToolDefinition `json:"tools,omitempty"`
 }
 
 type Message struct {

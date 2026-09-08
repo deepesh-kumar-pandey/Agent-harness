@@ -14,8 +14,9 @@ import (
 // ─────────────────────────────────────────────
 
 type FakeProvider struct {
-	Responses []string
-	Index     int
+	Responses   []string
+	Index       int
+	LastRequest providerpkg.ChatRequest
 }
 
 func (f *FakeProvider) Chat(
@@ -27,6 +28,8 @@ func (f *FakeProvider) Chat(
 			"fake provider has no more responses",
 		)
 	}
+
+	f.LastRequest = request
 
 	response := f.Responses[f.Index]
 	f.Index++
@@ -533,4 +536,189 @@ func TestOrchestratorMaxToolCalls(t *testing.T) {
 	)
 
 	fmt.Println("Orchestrator Max Tool Calls tests completed!")
+}
+
+func TestOrchestratorGetToolSchemas(t *testing.T) {
+	testCases := []struct {
+		name          string
+		registry      *toolspkg.ToolRegistry
+		expectError   bool
+		expectedCount int
+	}{
+		{
+			name:          "Get registered tool schemas",
+			registry:      toolspkg.NewToolRegistry(),
+			expectError:   false,
+			expectedCount: 3,
+		},
+		{
+			name:        "Nil registry",
+			registry:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			testAgent := agentpkg.NewAgent(testCase.registry)
+
+			orchestrator := NewOrchestrator(
+				testAgent,
+				&FakeProvider{},
+			)
+
+			schemas, err := orchestrator.GetToolSchemas()
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				if schemas != nil {
+					t.Fatalf("expected no schemas, got %v", schemas)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+
+			if len(schemas) != testCase.expectedCount {
+				t.Fatalf(
+					"expected %d schemas, got %d",
+					testCase.expectedCount,
+					len(schemas),
+				)
+			}
+		})
+	}
+}
+
+func TestOrchestratorGetToolDefinitions(t *testing.T) {
+	testCases := []struct {
+		name          string
+		registry      *toolspkg.ToolRegistry
+		expectError   bool
+		expectedCount int
+	}{
+		{
+			name:          "Get registered tool definitions",
+			registry:      toolspkg.NewToolRegistry(),
+			expectError:   false,
+			expectedCount: 3,
+		},
+		{
+			name:        "Nil registry",
+			registry:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			testAgent := agentpkg.NewAgent(testCase.registry)
+
+			orchestrator := NewOrchestrator(
+				testAgent,
+				&FakeProvider{},
+			)
+
+			definitions, err := orchestrator.GetToolDefinitions()
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				if definitions != nil {
+					t.Fatalf(
+						"expected no definitions, got %v",
+						definitions,
+					)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf(
+					"expected no error, got: %v",
+					err,
+				)
+			}
+
+			if len(definitions) != testCase.expectedCount {
+				t.Fatalf(
+					"expected %d definitions, got %d",
+					testCase.expectedCount,
+					len(definitions),
+				)
+			}
+		})
+	}
+}
+
+func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"Hello",
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Hello",
+			},
+		},
+	}
+
+	response, err := testOrchestrator.RunAgent(request)
+
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if response.Content != "Hello" {
+		t.Fatalf(
+			"expected response %q, got %q",
+			"Hello",
+			response.Content,
+		)
+	}
+
+	if len(fakeProvider.LastRequest.Tools) != 3 {
+		t.Fatalf(
+			"expected 3 tool definitions, got %d",
+			len(fakeProvider.LastRequest.Tools),
+		)
+	}
+
+	for _, tool := range fakeProvider.LastRequest.Tools {
+
+		if tool.Name == "" {
+			t.Fatal("expected tool definition to have a name")
+		}
+
+		if tool.Description == "" {
+			t.Fatal("expected tool definition to have a description")
+		}
+
+		if tool.Schema == nil {
+			t.Fatal("expected tool definition to have a schema")
+		}
+	}
 }

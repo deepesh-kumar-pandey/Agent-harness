@@ -84,6 +84,16 @@ func (o *DefaultOrchestrator) RunAgent(
 	request providerpkg.ChatRequest,
 ) (AgentResponse, error) {
 
+	toolDefinitions, err := o.GetToolDefinitions()
+	if err != nil {
+		return AgentResponse{}, fmt.Errorf(
+			"failed to get tool definitions: %w",
+			err,
+		)
+	}
+
+	request.Tools = toolDefinitions
+
 	toolCallCount := 0
 
 	for {
@@ -161,4 +171,42 @@ func (o *DefaultOrchestrator) RunAgent(
 			},
 		)
 	}
+}
+
+func (o *DefaultOrchestrator) GetToolSchemas() ([]map[string]any, error) {
+	return o.agentClient.GetToolSchemas()
+}
+
+func (o *DefaultOrchestrator) GetToolDefinitions() ([]providerpkg.ToolDefinition, error) {
+	schemas, err := o.agentClient.GetToolSchemas()
+	if err != nil {
+		return nil, err
+	}
+
+	definitions := make([]providerpkg.ToolDefinition, 0, len(schemas))
+
+	for _, schema := range schemas {
+		name, ok := schema["name"].(string)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("tool schema has invalid name")
+		}
+
+		description, ok := schema["description"].(string)
+		if !ok || description == "" {
+			return nil, fmt.Errorf("tool schema has invalid description")
+		}
+
+		toolSchema, ok := schema["schema"].(map[string]any)
+		if !ok || toolSchema == nil {
+			return nil, fmt.Errorf("tool schema has invalid schema")
+		}
+
+		definitions = append(definitions, providerpkg.ToolDefinition{
+			Name:        name,
+			Description: description,
+			Schema:      toolSchema,
+		})
+	}
+
+	return definitions, nil
 }
