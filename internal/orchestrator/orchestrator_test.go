@@ -15,6 +15,7 @@ import (
 
 type FakeProvider struct {
 	Responses   []string
+	ToolCalls   [][]providerpkg.ToolCall
 	Index       int
 	LastRequest providerpkg.ChatRequest
 }
@@ -31,12 +32,17 @@ func (f *FakeProvider) Chat(
 
 	f.LastRequest = request
 
-	response := f.Responses[f.Index]
+	response := providerpkg.ChatResponse{
+		Content: f.Responses[f.Index],
+	}
+
+	if f.Index < len(f.ToolCalls) {
+		response.ToolCalls = f.ToolCalls[f.Index]
+	}
+
 	f.Index++
 
-	return providerpkg.ChatResponse{
-		Content: response,
-	}, nil
+	return response, nil
 }
 
 // ─────────────────────────────────────────────
@@ -453,6 +459,82 @@ func TestOrchestratorRunAgent(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────
+// Test Orchestrator Native Tool Call
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgentNativeToolCall(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator native tool-call tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"",
+			"30",
+		},
+		ToolCalls: [][]providerpkg.ToolCall{
+			{
+				{
+					Name: "calculator",
+					Arguments: map[string]any{
+						"operation": "add",
+						"numbers":   []any{10.0, 20.0},
+					},
+				},
+			},
+			nil,
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Calculate 10 + 20",
+			},
+		},
+	}
+
+	response, err := testOrchestrator.RunAgent(request)
+
+	if err != nil {
+		t.Fatalf(
+			"expected no error, got: %v",
+			err,
+		)
+	}
+
+	if response.Content != "30" {
+		t.Fatalf(
+			"expected content %q, got %q",
+			"30",
+			response.Content,
+		)
+	}
+
+	if response.ToolCall != nil {
+		t.Fatalf(
+			"expected no tool call after execution",
+		)
+	}
+
+	fmt.Printf(
+		"Native tool call executed successfully: %s\n",
+		response.Content,
+	)
+
+	fmt.Println("Orchestrator native tool-call tests completed!")
+}
+
+// ─────────────────────────────────────────────
 // Test Orchestrator Max Tool Calls
 // ─────────────────────────────────────────────
 
@@ -538,7 +620,12 @@ func TestOrchestratorMaxToolCalls(t *testing.T) {
 	fmt.Println("Orchestrator Max Tool Calls tests completed!")
 }
 
+// ─────────────────────────────────────────────
+// Test Orchestrator Get Tool Schemas
+// ─────────────────────────────────────────────
+
 func TestOrchestratorGetToolSchemas(t *testing.T) {
+
 	testCases := []struct {
 		name          string
 		registry      *toolspkg.ToolRegistry
@@ -559,7 +646,9 @@ func TestOrchestratorGetToolSchemas(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
+
 		t.Run(testCase.name, func(t *testing.T) {
+
 			testAgent := agentpkg.NewAgent(testCase.registry)
 
 			orchestrator := NewOrchestrator(
@@ -575,14 +664,20 @@ func TestOrchestratorGetToolSchemas(t *testing.T) {
 				}
 
 				if schemas != nil {
-					t.Fatalf("expected no schemas, got %v", schemas)
+					t.Fatalf(
+						"expected no schemas, got %v",
+						schemas,
+					)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("expected no error, got: %v", err)
+				t.Fatalf(
+					"expected no error, got: %v",
+					err,
+				)
 			}
 
 			if len(schemas) != testCase.expectedCount {
@@ -596,7 +691,12 @@ func TestOrchestratorGetToolSchemas(t *testing.T) {
 	}
 }
 
+// ─────────────────────────────────────────────
+// Test Orchestrator Get Tool Definitions
+// ─────────────────────────────────────────────
+
 func TestOrchestratorGetToolDefinitions(t *testing.T) {
+
 	testCases := []struct {
 		name          string
 		registry      *toolspkg.ToolRegistry
@@ -617,7 +717,9 @@ func TestOrchestratorGetToolDefinitions(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
+
 		t.Run(testCase.name, func(t *testing.T) {
+
 			testAgent := agentpkg.NewAgent(testCase.registry)
 
 			orchestrator := NewOrchestrator(
@@ -660,6 +762,10 @@ func TestOrchestratorGetToolDefinitions(t *testing.T) {
 	}
 }
 
+// ─────────────────────────────────────────────
+// Test Orchestrator RunAgent Tool Definitions
+// ─────────────────────────────────────────────
+
 func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
 
 	registry := toolspkg.NewToolRegistry()
@@ -689,7 +795,10 @@ func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
 	response, err := testOrchestrator.RunAgent(request)
 
 	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+		t.Fatalf(
+			"expected no error, got: %v",
+			err,
+		)
 	}
 
 	if response.Content != "Hello" {
@@ -720,55 +829,5 @@ func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
 		if tool.Parameters == nil {
 			t.Fatal("expected tool definition to have parameters")
 		}
-	}
-}
-
-func TestConvertToolCall(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    providerpkg.OllamaToolCall
-		expected ToolCall
-	}{
-		{
-			name: "Convert calculator tool call",
-			input: providerpkg.OllamaToolCall{
-				Function: providerpkg.OllamaFunction{
-					Name: "calculator",
-					Arguments: map[string]any{
-						"operation": "add",
-						"numbers":   []any{10.0, 20.0},
-					},
-				},
-			},
-			expected: ToolCall{
-				Tool: "calculator",
-				Args: map[string]any{
-					"operation": "add",
-					"numbers":   []any{10.0, 20.0},
-				},
-			},
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			result := convertToolCall(testCase.input)
-
-			if result.Tool != testCase.expected.Tool {
-				t.Fatalf(
-					"expected tool %q, got %q",
-					testCase.expected.Tool,
-					result.Tool,
-				)
-			}
-
-			if len(result.Args) != len(testCase.expected.Args) {
-				t.Fatalf(
-					"expected %d arguments, got %d",
-					len(testCase.expected.Args),
-					len(result.Args),
-				)
-			}
-		})
 	}
 }

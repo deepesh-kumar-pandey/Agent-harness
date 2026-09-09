@@ -27,6 +27,18 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 - **Today**: Updated `RunAgent()` with native provider tool-call handling, tool execution through the Orchestrator, tool-result feedback to the provider, and maximum tool-call protection through `WithMaxToolCalls`.
 - **Today**: Added and updated tests for Ollama request conversion, native tool-call conversion, tool schemas, Agent/Orchestrator tool definitions, and Ollama integration. Native Ollama tool calling has been tested end-to-end with the local Ollama integration test.
 
+### Current Status
+
+The provider boundary is now provider-neutral. The shared `Provider` interface and generic `Message`, `ChatRequest`, `ChatResponse`, `ToolCall`, and `ToolDefinition` types are used by the orchestrator, while Ollama-specific request and response types remain inside the provider package.
+
+The provider converts generic messages and tool definitions to Ollama's API format and converts native Ollama tool calls back to generic tool calls. The orchestrator executes those calls through the Agent, returns tool results to the provider, and continues until a final response is produced or the tool-call limit is reached.
+
+The full unit-test suite currently passes:
+
+```bash
+go test ./...
+```
+
 ## Architecture
 
 The Agent Harness is built around a **layered tool-execution architecture** that emphasizes separation of concerns and extensibility:

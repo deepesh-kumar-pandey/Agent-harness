@@ -80,6 +80,26 @@ func (o *DefaultOrchestrator) AssignTool(
 	)
 }
 
+func convertProviderToolCalls(
+	toolCalls []providerpkg.ToolCall,
+) []providerpkg.OllamaToolCall {
+	result := make([]providerpkg.OllamaToolCall, 0, len(toolCalls))
+
+	for _, toolCall := range toolCalls {
+		result = append(
+			result,
+			providerpkg.OllamaToolCall{
+				Function: providerpkg.OllamaFunction{
+					Name:      toolCall.Name,
+					Arguments: toolCall.Arguments,
+				},
+			},
+		)
+	}
+
+	return result
+}
+
 func (o *DefaultOrchestrator) RunAgent(
 	request providerpkg.ChatRequest,
 ) (AgentResponse, error) {
@@ -107,9 +127,10 @@ func (o *DefaultOrchestrator) RunAgent(
 		// Handle native provider tool calls.
 		if len(response.ToolCalls) > 0 {
 
-			toolCall := convertToolCall(
-				response.ToolCalls[0],
-			)
+			toolCall := ToolCall{
+				Tool: response.ToolCalls[0].Name,
+				Args: response.ToolCalls[0].Arguments,
+			}
 
 			// Check whether the maximum number of tool calls has been reached.
 			if toolCallCount >= o.maxToolCalls {
@@ -223,44 +244,50 @@ func (o *DefaultOrchestrator) GetToolSchemas() ([]map[string]any, error) {
 }
 
 func (o *DefaultOrchestrator) GetToolDefinitions() ([]providerpkg.ToolDefinition, error) {
+
 	schemas, err := o.agentClient.GetToolSchemas()
 	if err != nil {
 		return nil, err
 	}
 
-	definitions := make([]providerpkg.ToolDefinition, 0, len(schemas))
+	definitions := make(
+		[]providerpkg.ToolDefinition,
+		0,
+		len(schemas),
+	)
 
 	for _, schema := range schemas {
+
 		name, ok := schema["name"].(string)
 		if !ok || name == "" {
-			return nil, fmt.Errorf("tool schema has invalid name")
+			return nil, fmt.Errorf(
+				"tool schema has invalid name",
+			)
 		}
 
 		description, ok := schema["description"].(string)
 		if !ok || description == "" {
-			return nil, fmt.Errorf("tool schema has invalid description")
+			return nil, fmt.Errorf(
+				"tool schema has invalid description",
+			)
 		}
 
 		toolParameters, ok := schema["schema"].(map[string]any)
 		if !ok || toolParameters == nil {
-			return nil, fmt.Errorf("tool schema has invalid parameters")
+			return nil, fmt.Errorf(
+				"tool schema has invalid parameters",
+			)
 		}
 
-		definitions = append(definitions, providerpkg.ToolDefinition{
-			Name:        name,
-			Description: description,
-			Parameters:  toolParameters,
-		})
+		definitions = append(
+			definitions,
+			providerpkg.ToolDefinition{
+				Name:        name,
+				Description: description,
+				Parameters:  toolParameters,
+			},
+		)
 	}
 
 	return definitions, nil
-}
-
-func convertToolCall(
-	toolCall providerpkg.OllamaToolCall,
-) ToolCall {
-	return ToolCall{
-		Tool: toolCall.Function.Name,
-		Args: toolCall.Function.Arguments,
-	}
 }
