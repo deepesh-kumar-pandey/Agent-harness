@@ -11,6 +11,19 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 
 ## Recent Progress
 
+- **Today**: Added a provider abstraction with a provider-neutral interface so the system can work across multiple LLM providers without hard-coding provider logic into the agent/orchestrator layers.
+- **Today**: Added Ollama provider support, including request validation, HTTP chat calls, JSON encoding/decoding, and test-friendly dependency injection.
+- **Today**: Added provider-neutral tool definitions and schemas so the tool registry and agent can expose capabilities in a format that providers can consume.
+- **Today**: Implemented native Ollama function/tool calling, including Ollama-specific request conversion and tool-call decoding.
+- **Today**: Added support for multiple native tool calls in a single provider response and updated the orchestrator to execute each requested tool and return their results to the provider.
+- **Today**: Added configurable maximum tool-call limits to protect the orchestration loop from runaway tool execution.
+- **Today**: Added the Calculator, Shell, and Filesystem tools to the Tool Registry and exposed JSON schema support for all registered tools.
+- **Today**: Updated the orchestrator to work with provider-neutral tool calls and native tool execution flow without tightly coupling to Ollama-specific types.
+- **Today**: Added comprehensive unit tests for provider, agent, tools, registry, and orchestrator behavior, including single and multiple native tool-call cases.
+- **Today**: Added an opt-in Ollama integration test for end-to-end tool calling when a local provider is available.
+- **Today**: Verified the end-to-end flow: User → Agent → Orchestrator → Provider → Native Tool Call → Tool Registry → Tool → Result → Provider → Final Response.
+- **Later**: Additional tools will be added after the core v1 is stabilized and the orchestration pattern is validated.
+
 - **Yesterday**: Added the low-level shell execution logic in `shell/shell.go`. It validates commands with `exec.LookPath`, executes them with `os/exec`, captures combined output, and returns `(string, error)`.
 - **Today**: Added the `ShellTool` and `FilesystemTool`, exposing shell commands and local filesystem operations through the common `Tool` interface.
 - **Today**: Added the initial Agent logic in `internal/agent/agent.go`. The Agent accepts a Tool Registry, retrieves tools by name, forwards argument maps, and returns tool results or errors.

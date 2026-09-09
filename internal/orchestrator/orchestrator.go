@@ -51,6 +51,10 @@ func NewOrchestrator(
 	return orchestrator
 }
 
+// ─────────────────────────────────────────────
+// Direct Tool Execution
+// ─────────────────────────────────────────────
+
 func (o *DefaultOrchestrator) Run(
 	name string,
 	args map[string]any,
@@ -61,6 +65,10 @@ func (o *DefaultOrchestrator) Run(
 	return o.agentClient.ExecuteTool(name, args)
 }
 
+// ─────────────────────────────────────────────
+// Provider Communication
+// ─────────────────────────────────────────────
+
 func (o *DefaultOrchestrator) Chat(
 	request providerpkg.ChatRequest,
 ) (providerpkg.ChatResponse, error) {
@@ -69,6 +77,10 @@ func (o *DefaultOrchestrator) Chat(
 
 	return o.providerClient.Chat(request)
 }
+
+// ─────────────────────────────────────────────
+// Tool Assignment
+// ─────────────────────────────────────────────
 
 func (o *DefaultOrchestrator) AssignTool(
 	toolCall ToolCall,
@@ -80,25 +92,9 @@ func (o *DefaultOrchestrator) AssignTool(
 	)
 }
 
-func convertProviderToolCalls(
-	toolCalls []providerpkg.ToolCall,
-) []providerpkg.OllamaToolCall {
-	result := make([]providerpkg.OllamaToolCall, 0, len(toolCalls))
-
-	for _, toolCall := range toolCalls {
-		result = append(
-			result,
-			providerpkg.OllamaToolCall{
-				Function: providerpkg.OllamaFunction{
-					Name:      toolCall.Name,
-					Arguments: toolCall.Arguments,
-				},
-			},
-		)
-	}
-
-	return result
-}
+// ─────────────────────────────────────────────
+// Agent Execution
+// ─────────────────────────────────────────────
 
 func (o *DefaultOrchestrator) RunAgent(
 	request providerpkg.ChatRequest,
@@ -124,36 +120,14 @@ func (o *DefaultOrchestrator) RunAgent(
 			return AgentResponse{}, err
 		}
 
-		// Handle native provider tool calls.
+		// ─────────────────────────────────────────────
+		// Native Provider Tool Calls
+		// ─────────────────────────────────────────────
+
 		if len(response.ToolCalls) > 0 {
 
-			toolCall := ToolCall{
-				Tool: response.ToolCalls[0].Name,
-				Args: response.ToolCalls[0].Arguments,
-			}
-
-			// Check whether the maximum number of tool calls has been reached.
-			if toolCallCount >= o.maxToolCalls {
-				return AgentResponse{}, fmt.Errorf(
-					"maximum tool-call limit (%d) exceeded",
-					o.maxToolCalls,
-				)
-			}
-
-			// Execute the requested tool.
-			result, err := o.AssignTool(toolCall)
-
-			if err != nil {
-				return AgentResponse{}, fmt.Errorf(
-					"failed to execute tool: %w",
-					err,
-				)
-			}
-
-			toolCallCount++
-
-			// Add the assistant's tool-call response
-			// and the tool result to the conversation.
+			// Add the assistant's response and all
+			// requested tool calls to the conversation.
 			request.Messages = append(
 				request.Messages,
 				providerpkg.Message{
@@ -161,16 +135,55 @@ func (o *DefaultOrchestrator) RunAgent(
 					Content:   response.Content,
 					ToolCalls: response.ToolCalls,
 				},
-				providerpkg.Message{
-					Role:    "tool",
-					Content: fmt.Sprintf("%v", result),
-				},
 			)
 
+			// Execute every requested tool call.
+			for _, providerToolCall := range response.ToolCalls {
+
+				// Check whether the maximum number of tool calls
+				// has been reached before executing the tool.
+				if toolCallCount >= o.maxToolCalls {
+					return AgentResponse{}, fmt.Errorf(
+						"maximum tool-call limit (%d) exceeded",
+						o.maxToolCalls,
+					)
+				}
+
+				toolCall := ToolCall{
+					Tool: providerToolCall.Name,
+					Args: providerToolCall.Arguments,
+				}
+
+				// Execute the requested tool.
+				result, err := o.AssignTool(toolCall)
+
+				if err != nil {
+					return AgentResponse{}, fmt.Errorf(
+						"failed to execute tool: %w",
+						err,
+					)
+				}
+
+				toolCallCount++
+
+				// Add the tool result to the conversation.
+				request.Messages = append(
+					request.Messages,
+					providerpkg.Message{
+						Role:    "tool",
+						Content: fmt.Sprintf("%v", result),
+					},
+				)
+			}
+
+			// Send all tool results back to the provider.
 			continue
 		}
 
-		// Decode the provider response.
+		// ─────────────────────────────────────────────
+		// Decode Provider Response
+		// ─────────────────────────────────────────────
+
 		var agentResponse AgentResponse
 
 		trimmedContent := strings.TrimSpace(response.Content)
@@ -196,12 +209,22 @@ func (o *DefaultOrchestrator) RunAgent(
 			agentResponse.Content = response.Content
 		}
 
-		// No tool call means the LLM has produced the final answer.
+		// ─────────────────────────────────────────────
+		// Final Response
+		// ─────────────────────────────────────────────
+
+		// No tool call means the LLM has produced
+		// the final answer.
 		if agentResponse.ToolCall == nil {
 			return agentResponse, nil
 		}
 
-		// Check whether the maximum number of tool calls has been reached.
+		// ─────────────────────────────────────────────
+		// Legacy Tool Call
+		// ─────────────────────────────────────────────
+
+		// Check whether the maximum number of tool calls
+		// has been reached.
 		if toolCallCount >= o.maxToolCalls {
 			return AgentResponse{}, fmt.Errorf(
 				"maximum tool-call limit (%d) exceeded",
@@ -239,9 +262,17 @@ func (o *DefaultOrchestrator) RunAgent(
 	}
 }
 
+// ─────────────────────────────────────────────
+// Tool Schemas
+// ─────────────────────────────────────────────
+
 func (o *DefaultOrchestrator) GetToolSchemas() ([]map[string]any, error) {
 	return o.agentClient.GetToolSchemas()
 }
+
+// ─────────────────────────────────────────────
+// Provider Tool Definitions
+// ─────────────────────────────────────────────
 
 func (o *DefaultOrchestrator) GetToolDefinitions() ([]providerpkg.ToolDefinition, error) {
 

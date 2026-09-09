@@ -535,6 +535,152 @@ func TestOrchestratorRunAgentNativeToolCall(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────
+// Test Orchestrator Multiple Native Tool Calls
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator multiple native tool-call tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"",
+			"Both calculations completed",
+		},
+		ToolCalls: [][]providerpkg.ToolCall{
+			{
+				{
+					Name: "calculator",
+					Arguments: map[string]any{
+						"operation": "add",
+						"numbers":   []any{10.0, 20.0},
+					},
+				},
+				{
+					Name: "calculator",
+					Arguments: map[string]any{
+						"operation": "multiply",
+						"numbers":   []any{5.0, 6.0},
+					},
+				},
+			},
+			nil,
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Calculate 10 + 20 and 5 * 6",
+			},
+		},
+	}
+
+	response, err := testOrchestrator.RunAgent(request)
+
+	if err != nil {
+		t.Fatalf(
+			"expected no error, got: %v",
+			err,
+		)
+	}
+
+	if response.Content != "Both calculations completed" {
+		t.Fatalf(
+			"expected content %q, got %q",
+			"Both calculations completed",
+			response.Content,
+		)
+	}
+
+	if response.ToolCall != nil {
+		t.Fatalf(
+			"expected no tool call after execution",
+		)
+	}
+
+	// The conversation should contain:
+	// 1 user message
+	// 1 assistant message containing both tool calls
+	// 2 tool result messages
+	if len(fakeProvider.LastRequest.Messages) != 4 {
+		t.Fatalf(
+			"expected 4 messages, got %d",
+			len(fakeProvider.LastRequest.Messages),
+		)
+	}
+
+	assistantMessage := fakeProvider.LastRequest.Messages[1]
+
+	if assistantMessage.Role != "assistant" {
+		t.Fatalf(
+			"expected assistant message, got %q",
+			assistantMessage.Role,
+		)
+	}
+
+	if len(assistantMessage.ToolCalls) != 2 {
+		t.Fatalf(
+			"expected 2 tool calls, got %d",
+			len(assistantMessage.ToolCalls),
+		)
+	}
+
+	firstToolResult := fakeProvider.LastRequest.Messages[2]
+
+	if firstToolResult.Role != "tool" {
+		t.Fatalf(
+			"expected first tool result message, got %q",
+			firstToolResult.Role,
+		)
+	}
+
+	if firstToolResult.Content != "30" {
+		t.Fatalf(
+			"expected first tool result %q, got %q",
+			"30",
+			firstToolResult.Content,
+		)
+	}
+
+	secondToolResult := fakeProvider.LastRequest.Messages[3]
+
+	if secondToolResult.Role != "tool" {
+		t.Fatalf(
+			"expected second tool result message, got %q",
+			secondToolResult.Role,
+		)
+	}
+
+	if secondToolResult.Content != "30" {
+		t.Fatalf(
+			"expected second tool result %q, got %q",
+			"30",
+			secondToolResult.Content,
+		)
+	}
+
+	fmt.Printf(
+		"Multiple native tool calls executed successfully: %s\n",
+		response.Content,
+	)
+
+	fmt.Println(
+		"Orchestrator multiple native tool-call tests completed!",
+	)
+}
+
+// ─────────────────────────────────────────────
 // Test Orchestrator Max Tool Calls
 // ─────────────────────────────────────────────
 
