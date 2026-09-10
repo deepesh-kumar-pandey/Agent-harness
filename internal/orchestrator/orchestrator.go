@@ -86,10 +86,20 @@ func (o *DefaultOrchestrator) AssignTool(
 	toolCall ToolCall,
 ) (any, error) {
 
-	return o.agentClient.ExecuteTool(
+	result, err := o.agentClient.ExecuteTool(
 		toolCall.Tool,
 		toolCall.Args,
 	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to execute tool %q: %w",
+			toolCall.Tool,
+			err,
+		)
+	}
+
+	return result, nil
 }
 
 // ─────────────────────────────────────────────
