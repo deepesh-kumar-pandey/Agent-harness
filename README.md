@@ -52,6 +52,26 @@ The full unit-test suite currently passes:
 go test ./...
 ```
 
+### Verified local Ollama setup
+
+The CLI is configured to use the installed local model by default:
+
+```bash
+kirito1/qwen3-coder:4b
+```
+
+You can override it at runtime with:
+
+```bash
+OLLAMA_MODEL="your-model-name" go run ./cmd
+```
+
+The real end-to-end orchestrator integration test is opt-in and requires the local Ollama service to be running:
+
+```bash
+ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./internal/orchestrator -v
+```
+
 ## Architecture
 
 The Agent Harness is built around a **layered tool-execution architecture** that emphasizes separation of concerns and extensibility:
