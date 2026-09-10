@@ -35,6 +35,7 @@ type OllamaChatRequest struct {
 	Model    string                 `json:"model"`
 	Messages []OllamaMessage        `json:"messages"`
 	Tools    []OllamaToolDefinition `json:"tools,omitempty"`
+	Stream   bool                   `json:"stream"`
 }
 
 type OllamaToolDefinition struct {
@@ -178,6 +179,7 @@ func convertToOllamaRequest(
 		Model:    request.Model,
 		Messages: convertToOllamaMessages(request.Messages),
 		Tools:    tools,
+		Stream:   false,
 	}
 }
 
