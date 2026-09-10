@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	agentpkg "agent-harness/internal/agent"
@@ -316,6 +317,133 @@ func TestOrchestratorAssignTool(t *testing.T) {
 	}
 
 	fmt.Println("Orchestrator AssignTool tests completed!")
+}
+
+// ─────────────────────────────────────────────
+// Test Orchestrator AssignTool Unknown Tool
+// ─────────────────────────────────────────────
+
+func TestOrchestratorAssignToolUnknownTool(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator unknown tool tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		&FakeProvider{},
+	)
+
+	testCases := []struct {
+		name        string
+		toolCall    ToolCall
+		expectError bool
+	}{
+		{
+			name: "Unknown tool",
+			toolCall: ToolCall{
+				Tool: "unknown",
+				Args: map[string]any{},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+
+			_, err := testOrchestrator.AssignTool(
+				testCase.toolCall,
+			)
+
+			if testCase.expectError && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+
+			if !testCase.expectError && err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+
+			if err != nil && !strings.Contains(
+				err.Error(),
+				testCase.toolCall.Tool,
+			) {
+				t.Fatalf(
+					"expected error to contain %q, got %q",
+					testCase.toolCall.Tool,
+					err.Error(),
+				)
+			}
+		})
+	}
+
+	fmt.Println("Orchestrator unknown tool tests completed!")
+}
+
+// ─────────────────────────────────────────────
+// Test Orchestrator AssignTool Execution Error
+// ─────────────────────────────────────────────
+
+func TestOrchestratorAssignToolExecutionError(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator tool execution error tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		&FakeProvider{},
+	)
+
+	testCases := []struct {
+		name        string
+		toolCall    ToolCall
+		expectError bool
+	}{
+		{
+			name: "Calculator division by zero",
+			toolCall: ToolCall{
+				Tool: "calculator",
+				Args: map[string]any{
+					"operation": "divide",
+					"numbers":   []any{10.0, 0.0},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+
+			_, err := testOrchestrator.AssignTool(
+				testCase.toolCall,
+			)
+
+			if testCase.expectError && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+
+			if !testCase.expectError && err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+
+			if err != nil && !strings.Contains(
+				err.Error(),
+				testCase.toolCall.Tool,
+			) {
+				t.Fatalf(
+					"expected error to contain %q, got %q",
+					testCase.toolCall.Tool,
+					err.Error(),
+				)
+			}
+		})
+	}
+
+	fmt.Println("Orchestrator tool execution error tests completed!")
 }
 
 // ─────────────────────────────────────────────
@@ -677,6 +805,80 @@ func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
 
 	fmt.Println(
 		"Orchestrator multiple native tool-call tests completed!",
+	)
+}
+
+// ─────────────────────────────────────────────
+// Test Orchestrator Multiple Native Tool Calls With Failure
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgentMultipleNativeToolCallsWithFailure(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator multiple native tool-call failure tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"",
+		},
+		ToolCalls: [][]providerpkg.ToolCall{
+			{
+				{
+					Name: "calculator",
+					Arguments: map[string]any{
+						"operation": "add",
+						"numbers":   []any{10.0, 20.0},
+					},
+				},
+				{
+					Name: "calculator",
+					Arguments: map[string]any{
+						"operation": "divide",
+						"numbers":   []any{10.0, 0.0},
+					},
+				},
+			},
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Calculate 10 + 20 and 10 / 0",
+			},
+		},
+	}
+
+	_, err := testOrchestrator.RunAgent(request)
+
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "calculator") {
+		t.Fatalf(
+			"expected error to contain %q, got %q",
+			"calculator",
+			err.Error(),
+		)
+	}
+
+	fmt.Printf(
+		"Multiple native tool-call failure handled successfully: %v\n",
+		err,
+	)
+
+	fmt.Println(
+		"Orchestrator multiple native tool-call failure tests completed!",
 	)
 }
 
