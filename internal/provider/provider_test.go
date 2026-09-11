@@ -300,3 +300,206 @@ func TestOllamaProvider_ToolCalls(t *testing.T) {
 		})
 	}
 }
+
+func TestOllamaProvider_ListModels(t *testing.T) {
+	testCases := []struct {
+		name        string
+		response    string
+		statusCode  int
+		serverError bool
+		expectError bool
+		expected    []string
+	}{
+		{
+			name:       "Returns model names",
+			response:   `{"models":[{"name":"kirito1/qwen3-coder:4b"},{"name":"mistral:latest"}]}`,
+			statusCode: http.StatusOK,
+			expected:   []string{"kirito1/qwen3-coder:4b", "mistral:latest"},
+		},
+		{
+			name:        "Rejects malformed response",
+			response:    `{"models":`,
+			statusCode:  http.StatusOK,
+			expectError: true,
+		},
+		{
+			name:        "Reports HTTP error",
+			response:    `{"error":"unavailable"}`,
+			statusCode:  http.StatusInternalServerError,
+			expectError: true,
+		},
+		{
+			name:        "Reports server failure",
+			serverError: true,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var provider OllamaProvider
+
+			if testCase.serverError {
+				provider = OllamaProvider{
+					BaseURL: "http://127.0.0.1:1",
+				}
+			} else {
+				server := httptest.NewServer(http.HandlerFunc(func(
+					writer http.ResponseWriter,
+					request *http.Request,
+				) {
+					if request.Method != http.MethodGet {
+						t.Fatalf("expected GET request, got %s", request.Method)
+					}
+
+					if request.URL.Path != "/api/tags" {
+						t.Fatalf("expected /api/tags, got %s", request.URL.Path)
+					}
+
+					writer.WriteHeader(testCase.statusCode)
+					_, _ = writer.Write([]byte(testCase.response))
+				}))
+				defer server.Close()
+
+				provider = OllamaProvider{
+					BaseURL: server.URL,
+					Client:  server.Client(),
+				}
+			}
+
+			models, err := provider.ListModels()
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+
+			if len(models) != len(testCase.expected) {
+				t.Fatalf("expected %d models, got %d", len(testCase.expected), len(models))
+			}
+
+			for index, expectedModel := range testCase.expected {
+				if models[index] != expectedModel {
+					t.Fatalf("expected model %q, got %q", expectedModel, models[index])
+				}
+			}
+		})
+	}
+}
+
+func TestOllamaProvider_HasModel(t *testing.T) {
+	testCases := []struct {
+		name          string
+		model         string
+		expectedFound bool
+	}{
+		{
+			name:          "Configured model is present",
+			model:         "llama3.1",
+			expectedFound: true,
+		},
+		{
+			name:          "Configured model is missing",
+			model:         "missing-model",
+			expectedFound: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(
+				writer http.ResponseWriter,
+				request *http.Request,
+			) {
+				_, _ = writer.Write([]byte(
+					`{"models":[{"name":"llama3.1"},{"name":"mistral:latest"}]}`,
+				))
+			}))
+			defer server.Close()
+
+			provider := OllamaProvider{
+				BaseURL: server.URL,
+				Client:  server.Client(),
+			}
+
+			found, err := provider.HasModel(testCase.model)
+			if err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+
+			if found != testCase.expectedFound {
+				t.Fatalf("expected found=%t, got %t", testCase.expectedFound, found)
+			}
+		})
+	}
+}
+
+func TestOllamaProvider_PullModel(t *testing.T) {
+	testCases := []struct {
+		name        string
+		statusCode  int
+		expectError bool
+	}{
+		{
+			name:       "Pulls model successfully",
+			statusCode: http.StatusOK,
+		},
+		{
+			name:        "Reports pull error",
+			statusCode:  http.StatusInternalServerError,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(
+				writer http.ResponseWriter,
+				request *http.Request,
+			) {
+				if request.Method != http.MethodPost {
+					t.Fatalf("expected POST request, got %s", request.Method)
+				}
+
+				if request.URL.Path != "/api/pull" {
+					t.Fatalf("expected /api/pull, got %s", request.URL.Path)
+				}
+
+				var body struct {
+					Name string `json:"name"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+					t.Fatalf("failed to decode request: %v", err)
+				}
+
+				if body.Name != "llama3.1" {
+					t.Fatalf("expected model llama3.1, got %q", body.Name)
+				}
+
+				writer.WriteHeader(testCase.statusCode)
+				_, _ = writer.Write([]byte(`{"status":"success"}`))
+			}))
+			defer server.Close()
+
+			provider := OllamaProvider{
+				BaseURL: server.URL,
+				Client:  server.Client(),
+			}
+
+			err := provider.PullModel("llama3.1")
+			if testCase.expectError && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if !testCase.expectError && err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
