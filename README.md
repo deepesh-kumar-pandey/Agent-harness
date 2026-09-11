@@ -32,6 +32,7 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 - **Today**: Added provider unit tests with a local `httptest` server and an Ollama integration test for the local service.
 - **Today**: Added Ollama local model discovery, availability checks, and model pulling through `/api/tags` and `/api/pull`.
 - **Today**: Added provider-aware startup model selection with explicit choices for pulling the configured model, using an installed alternative, or exiting.
+- **Today**: Added persistent conversation history so Agent and Orchestrator requests retain prior user, assistant, and tool messages.
 - **Today**: Added the Orchestrator layer in `internal/orchestrator`, connecting the Agent and Provider layers through `Run`, `Chat`, and `AssignTool`.
 - **Today**: Added the `ToolCall` and `AgentResponse` contracts with JSON tags for structured LLM responses.
 - **Today**: Added `RunAgent`, which accepts plain text or structured JSON provider responses, executes requested tool calls, and returns tool results.
@@ -47,6 +48,8 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 The provider boundary is now provider-neutral. The shared `Provider` interface and generic `Message`, `ChatRequest`, `ChatResponse`, `ToolCall`, and `ToolDefinition` types are used by the orchestrator, while Ollama-specific request and response types remain inside the provider package.
 
 The provider converts generic messages and tool definitions to Ollama's API format and converts native Ollama tool calls back to generic tool calls. The orchestrator executes those calls through the Agent, returns tool results to the provider, and continues until a final response is produced or the tool-call limit is reached.
+
+Conversation history is owned by the Agent and updated by the Orchestrator during `RunAgent`. Each request adds the new user message, provider responses, and tool results to the session history. Invalid messages without a role are rejected, and selected history is kept in memory only.
 
 The full unit-test suite currently passes:
 
@@ -179,6 +182,7 @@ ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./i
 - Returns the tool result or execution error to the caller.
 - **Tests**: `internal/agent/agent_test.go` covers agent construction, calculator and shell execution, unknown tools, `Run`, and tool schema retrieval.
 - **Status**: Tool-execution logic and tool-definition exposure implemented.
+- **Conversation history**: The Agent owns the in-memory conversation and exposes `AddMessage` and `GetMessages` for the Orchestrator.
 
 #### 4. Orchestrator (Implemented)
 - Acts as the central coordinator of the agent workflow.
@@ -193,6 +197,7 @@ ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./i
 - Wraps provider, parsing, and tool execution errors with context.
 - **Key distinction**: The Orchestrator is responsible for **coordinating execution** and **workflow decisions**, while the Registry is only responsible for **managing tools**.
 - **Status**: Implemented, including native provider tool-call execution and tool-result feedback.
+- **Conversation history**: `RunAgent` preserves user, assistant, and tool messages across calls made through the same Agent instance.
 
 #### 5. Agent Response Contract (Implemented)
 - Defined in `internal/orchestrator/response.go`.
