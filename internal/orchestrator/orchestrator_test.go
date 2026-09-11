@@ -1179,3 +1179,128 @@ func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
 		}
 	}
 }
+
+// ─────────────────────────────────────────────
+// Test Orchestrator RunAgent Provider Error
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgentProviderError(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator RunAgent provider error tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Hello",
+			},
+		},
+	}
+
+	_, err := testOrchestrator.RunAgent(request)
+
+	if err == nil {
+		t.Fatal("expected provider error, got nil")
+	}
+
+	expectedError := "fake provider has no more responses"
+
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Fatalf(
+			"expected error to contain %q, got %q",
+			expectedError,
+			err.Error(),
+		)
+	}
+
+	fmt.Printf(
+		"Provider error correctly propagated: %v\n",
+		err,
+	)
+
+	fmt.Println(
+		"Orchestrator RunAgent provider error tests completed!",
+	)
+}
+
+// ─────────────────────────────────────────────
+// Test Orchestrator RunAgent Provider Exhausted
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgentProviderExhausted(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator RunAgent provider exhaustion tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"",
+		},
+		ToolCalls: [][]providerpkg.ToolCall{
+			{
+				{
+					Name: "calculator",
+					Arguments: map[string]any{
+						"operation": "add",
+						"numbers":   []any{10.0, 20.0},
+					},
+				},
+			},
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Calculate 10 + 20",
+			},
+		},
+	}
+
+	_, err := testOrchestrator.RunAgent(request)
+
+	if err == nil {
+		t.Fatal("expected provider exhaustion error, got nil")
+	}
+
+	expectedError := "fake provider has no more responses"
+
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Fatalf(
+			"expected error to contain %q, got %q",
+			expectedError,
+			err.Error(),
+		)
+	}
+
+	fmt.Printf(
+		"Provider exhaustion correctly handled: %v\n",
+		err,
+	)
+
+	fmt.Println(
+		"Orchestrator RunAgent provider exhaustion tests completed!",
+	)
+}
