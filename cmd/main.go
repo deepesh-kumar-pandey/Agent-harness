@@ -49,12 +49,13 @@ func loadConfig() (*configpkg.Config, error) {
 func selectModel(
 	providerClient providerpkg.Provider,
 	configuredModel string,
+	configuredSource string,
 	input *bufio.Scanner,
 	output io.Writer,
-) (string, error) {
+) (string, string, error) {
 	manager, ok := providerClient.(providerpkg.LocalModelManager)
 	if !ok {
-		return configuredModel, nil
+		return configuredModel, configuredSource, nil
 	}
 
 	models, err := manager.ListModels()
@@ -62,11 +63,11 @@ func selectModel(
 		fmt.Fprintln(output, "Unable to connect to Ollama.")
 		fmt.Fprintln(output, "Make sure Ollama is running:")
 		fmt.Fprintln(output, "    ollama serve")
-		return "", fmt.Errorf("unable to connect to Ollama: %w", err)
+		return "", "", fmt.Errorf("unable to connect to Ollama: %w", err)
 	}
 
 	if containsModel(models, configuredModel) {
-		return configuredModel, nil
+		return configuredModel, configuredSource, nil
 	}
 
 	for {
@@ -98,7 +99,7 @@ func selectModel(
 		fmt.Fprint(output, "> ")
 
 		if !input.Scan() {
-			return "", fmt.Errorf("model selection canceled")
+			return "", "", fmt.Errorf("model selection canceled")
 		}
 
 		choice := strings.ToLower(strings.TrimSpace(input.Text()))
@@ -121,13 +122,13 @@ func selectModel(
 				"Model %q pulled successfully.\n",
 				configuredModel,
 			)
-			return configuredModel, nil
+			return configuredModel, "pulled", nil
 		case "q":
-			return "", fmt.Errorf("model selection canceled")
+			return "", "", fmt.Errorf("model selection canceled")
 		default:
 			index, err := strconv.Atoi(choice)
 			if err == nil && index > 0 && index <= len(models) {
-				return models[index-1], nil
+				return models[index-1], "local-selection", nil
 			}
 
 			fmt.Fprintln(output, "Invalid choice. Please choose one of the available options.")
@@ -163,9 +164,10 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	model, modelSource := resolveModel(appConfig.Provider.Model)
 
-	model, err = selectModel(
+	model, modelSource, err = selectModel(
 		providerClient,
 		model,
+		modelSource,
 		scanner,
 		os.Stdout,
 	)

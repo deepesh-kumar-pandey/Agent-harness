@@ -97,58 +97,64 @@ func TestResolveModelDefaultsToInstalledModel(t *testing.T) {
 
 func TestSelectModel(t *testing.T) {
 	testCases := []struct {
-		name          string
-		provider      providerpkg.Provider
-		configured    string
-		input         string
-		expected      string
-		expectError   bool
-		expectOutput  string
-		expectPulls   int
-		expectMessage string
+		name           string
+		provider       providerpkg.Provider
+		configured     string
+		input          string
+		expected       string
+		expectedSource string
+		expectError    bool
+		expectOutput   string
+		expectPulls    int
+		expectMessage  string
 	}{
 		{
-			name:       "Configured model is available",
-			provider:   &fakeLocalProvider{models: []string{"llama3.1"}},
-			configured: "llama3.1",
-			expected:   "llama3.1",
+			name:           "Configured model is available",
+			provider:       &fakeLocalProvider{models: []string{"llama3.1"}},
+			configured:     "llama3.1",
+			expected:       "llama3.1",
+			expectedSource: "config",
 		},
 		{
-			name:         "Selects installed alternative",
-			provider:     &fakeLocalProvider{models: []string{"mistral:latest"}},
-			configured:   "llama3.1",
-			input:        "1\n",
-			expected:     "mistral:latest",
-			expectOutput: "Available local models:",
+			name:           "Selects installed alternative",
+			provider:       &fakeLocalProvider{models: []string{"mistral:latest"}},
+			configured:     "llama3.1",
+			input:          "1\n",
+			expected:       "mistral:latest",
+			expectedSource: "local-selection",
+			expectOutput:   "Available local models:",
 		},
 		{
-			name:          "Invalid choice then selects alternative",
-			provider:      &fakeLocalProvider{models: []string{"mistral:latest"}},
-			configured:    "llama3.1",
-			input:         "x\n1\n",
-			expected:      "mistral:latest",
-			expectOutput:  "Invalid choice",
-			expectMessage: "selection flow",
+			name:           "Invalid choice then selects alternative",
+			provider:       &fakeLocalProvider{models: []string{"mistral:latest"}},
+			configured:     "llama3.1",
+			input:          "x\n1\n",
+			expected:       "mistral:latest",
+			expectedSource: "local-selection",
+			expectOutput:   "Invalid choice",
+			expectMessage:  "selection flow",
 		},
 		{
-			name:          "Pulls configured model",
-			provider:      &fakeLocalProvider{},
-			configured:    "llama3.1",
-			input:         "p\n",
-			expected:      "llama3.1",
-			expectOutput:  "Model \"llama3.1\" pulled successfully.",
-			expectPulls:   1,
-			expectMessage: "pull success",
+			name:           "Pulls configured model",
+			provider:       &fakeLocalProvider{},
+			configured:     "llama3.1",
+			input:          "p\n",
+			expected:       "llama3.1",
+			expectedSource: "pulled",
+			expectOutput:   "Model \"llama3.1\" pulled successfully.",
+			expectPulls:    1,
+			expectMessage:  "pull success",
 		},
 		{
-			name:          "Retries after pull failure",
-			provider:      &fakeLocalProvider{pullErrors: []error{errors.New("download failed")}},
-			configured:    "llama3.1",
-			input:         "p\np\n",
-			expected:      "llama3.1",
-			expectOutput:  "Failed to pull model \"llama3.1\": download failed",
-			expectPulls:   2,
-			expectMessage: "pull retry",
+			name:           "Retries after pull failure",
+			provider:       &fakeLocalProvider{pullErrors: []error{errors.New("download failed")}},
+			configured:     "llama3.1",
+			input:          "p\np\n",
+			expected:       "llama3.1",
+			expectedSource: "pulled",
+			expectOutput:   "Failed to pull model \"llama3.1\": download failed",
+			expectPulls:    2,
+			expectMessage:  "pull retry",
 		},
 		{
 			name:          "Quit after pull failure",
@@ -169,12 +175,13 @@ func TestSelectModel(t *testing.T) {
 			expectMessage: "connection error",
 		},
 		{
-			name:         "Skips discovery for cloud provider",
-			provider:     fakeCloudProvider{},
-			configured:   "deepseek-chat",
-			input:        "",
-			expected:     "deepseek-chat",
-			expectOutput: "",
+			name:           "Skips discovery for cloud provider",
+			provider:       fakeCloudProvider{},
+			configured:     "deepseek-chat",
+			input:          "",
+			expected:       "deepseek-chat",
+			expectedSource: "config",
+			expectOutput:   "",
 		},
 	}
 
@@ -183,9 +190,10 @@ func TestSelectModel(t *testing.T) {
 			var output strings.Builder
 			input := bufio.NewScanner(strings.NewReader(testCase.input))
 
-			got, err := selectModel(
+			got, source, err := selectModel(
 				testCase.provider,
 				testCase.configured,
+				"config",
 				input,
 				&output,
 			)
@@ -200,6 +208,10 @@ func TestSelectModel(t *testing.T) {
 
 			if !testCase.expectError && got != testCase.expected {
 				t.Fatalf("expected model %q, got %q", testCase.expected, got)
+			}
+
+			if !testCase.expectError && source != testCase.expectedSource {
+				t.Fatalf("expected source %q, got %q", testCase.expectedSource, source)
 			}
 
 			if testCase.expectOutput != "" &&
