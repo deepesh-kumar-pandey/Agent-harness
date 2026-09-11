@@ -389,7 +389,10 @@ go test -v ./shell
 
 ```
 agent-harness/
-├── cmd/                              (Planned: application entry points)
+├── cmd/                              (Application entry points)
+│   └── agent/
+│       ├── main.go                   (CLI entry point)
+│       └── main_test.go              (CLI tests)
 ├── config/                           (Configuration layer)
 │   ├── config.go                     (Configuration types, loading, and validation)
 │   ├── config.json                   (Provider configuration)
@@ -405,9 +408,11 @@ agent-harness/
 │   │   ├── shell_tool.go             (Shell tool implementation)
 │   │   ├── shell_tool_test.go        (Shell tool unit tests)
 │   │   └── registry_test.go          (Registry unit tests)
-│   ├── agent/                        (Initial Agent implementation)
+│   ├── agent/                        (Agent and conversation history)
 │   │   ├── agent.go                  (Agent tool execution logic)
-│   │   └── agent_test.go             (Agent unit tests)
+│   │   ├── agent_test.go             (Agent unit tests)
+│   │   ├── history.go                (In-memory conversation history)
+│   │   └── history_test.go           (Conversation history tests)
 │   ├── orchestrator/                 (Orchestrator implementation)
 │   │   ├── orchestrator.go           (Orchestrator workflow and tool execution)
 │   │   ├── orchestrator_test.go      (Orchestrator unit tests)
