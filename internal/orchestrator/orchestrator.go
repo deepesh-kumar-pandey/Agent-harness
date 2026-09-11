@@ -120,11 +120,30 @@ func (o *DefaultOrchestrator) RunAgent(
 
 	request.Tools = toolDefinitions
 
+	if len(request.Messages) == 0 {
+		return AgentResponse{}, fmt.Errorf(
+			"request contains no messages",
+		)
+	}
+
+	// Add the new user message to the persistent conversation.
+	userMessage := request.Messages[len(request.Messages)-1]
+
+	if err := o.agentClient.AddMessage(userMessage); err != nil {
+		return AgentResponse{}, fmt.Errorf(
+			"failed to add user message to conversation: %w",
+			err,
+		)
+	}
+
+	// Use the persistent conversation as the provider request history.
+	request.Messages = o.agentClient.GetMessages()
+
 	toolCallCount := 0
 
 	for {
 
-		// Send the request to the LLM provider.
+		// Send the complete conversation to the provider.
 		response, err := o.Chat(request)
 		if err != nil {
 			return AgentResponse{}, err
@@ -136,16 +155,20 @@ func (o *DefaultOrchestrator) RunAgent(
 
 		if len(response.ToolCalls) > 0 {
 
-			// Add the assistant's response and all
-			// requested tool calls to the conversation.
-			request.Messages = append(
-				request.Messages,
-				providerpkg.Message{
-					Role:      "assistant",
-					Content:   response.Content,
-					ToolCalls: response.ToolCalls,
-				},
-			)
+			// Add the assistant's response and tool calls
+			// to the persistent conversation.
+			assistantMessage := providerpkg.Message{
+				Role:      "assistant",
+				Content:   response.Content,
+				ToolCalls: response.ToolCalls,
+			}
+
+			if err := o.agentClient.AddMessage(assistantMessage); err != nil {
+				return AgentResponse{}, fmt.Errorf(
+					"failed to add assistant message to conversation: %w",
+					err,
+				)
+			}
 
 			// Execute every requested tool call.
 			for _, providerToolCall := range response.ToolCalls {
@@ -176,17 +199,24 @@ func (o *DefaultOrchestrator) RunAgent(
 
 				toolCallCount++
 
-				// Add the tool result to the conversation.
-				request.Messages = append(
-					request.Messages,
-					providerpkg.Message{
-						Role:    "tool",
-						Content: fmt.Sprintf("%v", result),
-					},
-				)
+				// Add the tool result to the persistent conversation.
+				toolMessage := providerpkg.Message{
+					Role:    "tool",
+					Content: fmt.Sprintf("%v", result),
+				}
+
+				if err := o.agentClient.AddMessage(toolMessage); err != nil {
+					return AgentResponse{}, fmt.Errorf(
+						"failed to add tool message to conversation: %w",
+						err,
+					)
+				}
 			}
 
-			// Send all tool results back to the provider.
+			// Refresh the provider request with the updated
+			// persistent conversation.
+			request.Messages = o.agentClient.GetMessages()
+
 			continue
 		}
 
@@ -226,6 +256,19 @@ func (o *DefaultOrchestrator) RunAgent(
 		// No tool call means the LLM has produced
 		// the final answer.
 		if agentResponse.ToolCall == nil {
+
+			assistantMessage := providerpkg.Message{
+				Role:    "assistant",
+				Content: response.Content,
+			}
+
+			if err := o.agentClient.AddMessage(assistantMessage); err != nil {
+				return AgentResponse{}, fmt.Errorf(
+					"failed to add assistant message to conversation: %w",
+					err,
+				)
+			}
+
 			return agentResponse, nil
 		}
 
@@ -257,18 +300,35 @@ func (o *DefaultOrchestrator) RunAgent(
 		toolCallCount++
 
 		// Add the assistant's tool-call response
-		// and the tool result to the conversation.
-		request.Messages = append(
-			request.Messages,
-			providerpkg.Message{
-				Role:    "assistant",
-				Content: response.Content,
-			},
-			providerpkg.Message{
-				Role:    "tool",
-				Content: fmt.Sprintf("%v", result),
-			},
-		)
+		// to the persistent conversation.
+		assistantMessage := providerpkg.Message{
+			Role:    "assistant",
+			Content: response.Content,
+		}
+
+		if err := o.agentClient.AddMessage(assistantMessage); err != nil {
+			return AgentResponse{}, fmt.Errorf(
+				"failed to add assistant message to conversation: %w",
+				err,
+			)
+		}
+
+		// Add the tool result to the persistent conversation.
+		toolMessage := providerpkg.Message{
+			Role:    "tool",
+			Content: fmt.Sprintf("%v", result),
+		}
+
+		if err := o.agentClient.AddMessage(toolMessage); err != nil {
+			return AgentResponse{}, fmt.Errorf(
+				"failed to add tool message to conversation: %w",
+				err,
+			)
+		}
+
+		// Refresh the provider request with the updated
+		// persistent conversation.
+		request.Messages = o.agentClient.GetMessages()
 	}
 }
 

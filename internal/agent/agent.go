@@ -1,17 +1,28 @@
 package tools
 
 import (
+	"agent-harness/internal/provider"
 	"agent-harness/internal/tools"
 )
 
 type Agent struct {
-	registry *tools.ToolRegistry
+	registry     *tools.ToolRegistry
+	conversation *Conversation
 }
 
 func NewAgent(registry *tools.ToolRegistry) *Agent {
 	return &Agent{
-		registry: registry,
+		registry:     registry,
+		conversation: NewConversation(),
 	}
+}
+
+func (a *Agent) AddMessage(message provider.Message) error {
+	return a.conversation.AddMessage(message)
+}
+
+func (a *Agent) GetMessages() []provider.Message {
+	return a.conversation.GetMessages()
 }
 
 func (a *Agent) GetToolSchemas() ([]map[string]any, error) {

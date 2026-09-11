@@ -34,6 +34,7 @@ func loadConfig() (*configpkg.Config, error) {
 	}
 
 	var lastErr error
+
 	for _, path := range configPaths {
 		appConfig, err := configpkg.Load(path)
 		if err == nil {
@@ -53,6 +54,7 @@ func selectModel(
 	input *bufio.Scanner,
 	output io.Writer,
 ) (string, string, error) {
+
 	manager, ok := providerClient.(providerpkg.LocalModelManager)
 	if !ok {
 		return configuredModel, configuredSource, nil
@@ -63,7 +65,11 @@ func selectModel(
 		fmt.Fprintln(output, "Unable to connect to Ollama.")
 		fmt.Fprintln(output, "Make sure Ollama is running:")
 		fmt.Fprintln(output, "    ollama serve")
-		return "", "", fmt.Errorf("unable to connect to Ollama: %w", err)
+
+		return "", "", fmt.Errorf(
+			"unable to connect to Ollama: %w",
+			err,
+		)
 	}
 
 	if containsModel(models, configuredModel) {
@@ -92,9 +98,11 @@ func selectModel(
 		}
 
 		fmt.Fprintf(output, "[p] Pull %s\n", configuredModel)
+
 		if len(models) > 0 {
 			fmt.Fprintln(output, "[1-9] Use an installed model")
 		}
+
 		fmt.Fprintln(output, "[q] Quit")
 		fmt.Fprint(output, "> ")
 
@@ -103,6 +111,7 @@ func selectModel(
 		}
 
 		choice := strings.ToLower(strings.TrimSpace(input.Text()))
+
 		switch choice {
 		case "p":
 			fmt.Fprintf(output, "Pulling model %q...\n", configuredModel)
@@ -122,16 +131,23 @@ func selectModel(
 				"Model %q pulled successfully.\n",
 				configuredModel,
 			)
+
 			return configuredModel, "pulled", nil
+
 		case "q":
 			return "", "", fmt.Errorf("model selection canceled")
+
 		default:
 			index, err := strconv.Atoi(choice)
+
 			if err == nil && index > 0 && index <= len(models) {
 				return models[index-1], "local-selection", nil
 			}
 
-			fmt.Fprintln(output, "Invalid choice. Please choose one of the available options.")
+			fmt.Fprintln(
+				output,
+				"Invalid choice. Please choose one of the available options.",
+			)
 		}
 	}
 }
@@ -162,7 +178,10 @@ func main() {
 	})
 
 	scanner := bufio.NewScanner(os.Stdin)
-	model, modelSource := resolveModel(appConfig.Provider.Model)
+
+	model, modelSource := resolveModel(
+		appConfig.Provider.Model,
+	)
 
 	model, modelSource, err = selectModel(
 		providerClient,
