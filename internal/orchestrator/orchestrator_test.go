@@ -1304,3 +1304,130 @@ func TestOrchestratorRunAgentProviderExhausted(t *testing.T) {
 		"Orchestrator RunAgent provider exhaustion tests completed!",
 	)
 }
+
+// ─────────────────────────────────────────────
+// Test Orchestrator Conversation History
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgentConversationHistory(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator conversation history tests...")
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"Your name is Alice.",
+			"Your name is Alice.",
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	firstRequest := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "My name is Alice.",
+			},
+		},
+	}
+
+	firstResponse, err := testOrchestrator.RunAgent(firstRequest)
+
+	if err != nil {
+		t.Fatalf(
+			"expected no error on first request, got: %v",
+			err,
+		)
+	}
+
+	if firstResponse.Content != "Your name is Alice." {
+		t.Fatalf(
+			"expected first response %q, got %q",
+			"Your name is Alice.",
+			firstResponse.Content,
+		)
+	}
+
+	secondRequest := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "What is my name?",
+			},
+		},
+	}
+
+	secondResponse, err := testOrchestrator.RunAgent(secondRequest)
+
+	if err != nil {
+		t.Fatalf(
+			"expected no error on second request, got: %v",
+			err,
+		)
+	}
+
+	if secondResponse.Content != "Your name is Alice." {
+		t.Fatalf(
+			"expected second response %q, got %q",
+			"Your name is Alice.",
+			secondResponse.Content,
+		)
+	}
+
+	messages := fakeProvider.LastRequest.Messages
+
+	if len(messages) != 3 {
+		t.Fatalf(
+			"expected 3 conversation messages, got %d",
+			len(messages),
+		)
+	}
+
+	expectedMessages := []providerpkg.Message{
+		{
+			Role:    "user",
+			Content: "My name is Alice.",
+		},
+		{
+			Role:    "assistant",
+			Content: "Your name is Alice.",
+		},
+		{
+			Role:    "user",
+			Content: "What is my name?",
+		},
+	}
+
+	for _, expectedMessage := range expectedMessages {
+
+		found := false
+
+		for _, actualMessage := range messages {
+
+			if actualMessage.Role == expectedMessage.Role &&
+				actualMessage.Content == expectedMessage.Content {
+
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Fatalf(
+				"expected message %+v to be present in conversation",
+				expectedMessage,
+			)
+		}
+	}
+
+	fmt.Println("Conversation history preserved successfully.")
+	fmt.Println("Orchestrator conversation history tests completed!")
+}
