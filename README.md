@@ -30,6 +30,8 @@ Think of it as the scaffolding that turns a language model into an autonomous ag
 - **Today**: Added `Agent.Run`, which provides the public entry point for executing a named registered tool.
 - **Today**: Implemented the Ollama Provider in `internal/provider/provider.go`, including request validation, JSON encoding, HTTP requests, response decoding, and injectable HTTP dependencies for testing.
 - **Today**: Added provider unit tests with a local `httptest` server and an Ollama integration test for the local service.
+- **Today**: Added Ollama local model discovery, availability checks, and model pulling through `/api/tags` and `/api/pull`.
+- **Today**: Added provider-aware startup model selection with explicit choices for pulling the configured model, using an installed alternative, or exiting.
 - **Today**: Added the Orchestrator layer in `internal/orchestrator`, connecting the Agent and Provider layers through `Run`, `Chat`, and `AssignTool`.
 - **Today**: Added the `ToolCall` and `AgentResponse` contracts with JSON tags for structured LLM responses.
 - **Today**: Added `RunAgent`, which accepts plain text or structured JSON provider responses, executes requested tool calls, and returns tool results.
@@ -52,19 +54,35 @@ The full unit-test suite currently passes:
 go test ./...
 ```
 
-### Verified local Ollama setup
+### Local Ollama model setup
 
-The CLI is configured to use the installed local model by default:
+The CLI uses the model configured in `config/config.json` by default:
 
 ```bash
-kirito1/qwen3-coder:4b
+llama3.1
 ```
 
-You can override it at runtime with:
+At startup, the CLI checks the local Ollama model list. If the configured model is installed, it is used automatically. If it is missing, the CLI displays the installed local models and lets you:
+
+- Pull the configured model with `p`.
+- Select an installed alternative by number for the current session.
+- Quit with `q`.
+
+Selecting an alternative does not modify `config/config.json`. Pulling a model is explicit; the CLI never downloads or switches models silently.
+
+You can override the configured model at runtime with:
 
 ```bash
 OLLAMA_MODEL="your-model-name" go run ./cmd
 ```
+
+Ollama must be running locally for model discovery and chat:
+
+```bash
+ollama serve
+```
+
+If Ollama cannot be contacted, the CLI reports the connection error and exits. Providers that do not implement local model management skip this discovery flow and use their configured cloud model directly.
 
 The real end-to-end orchestrator integration test is opt-in and requires the local Ollama service to be running:
 
@@ -125,10 +143,12 @@ go test -v ./config
 - Supports native Ollama tool calling by converting provider-neutral `ToolDefinition` values into Ollama function-tool request definitions.
 - Validates that a model and at least one message are provided before making a network request.
 - Supports configurable `BaseURL` and `http.Client` values so tests do not need a running external service.
+- Provides Ollama-specific local model management through `ListModels`, `HasModel`, and `PullModel`, backed by `/api/tags` and `/api/pull`.
+- Exposes the optional `LocalModelManager` capability without requiring cloud providers to implement local model operations.
 - Acts as the bridge between the Agent and external AI services.
 - **Implemented types**: `Provider`, `ToolDefinition`, `ChatRequest`, `Message`, `ChatResponse`, Ollama request/response tool-call types, and `OllamaProvider`.
 - **Tool parameters**: Provider-neutral definitions expose JSON Schema through `ToolDefinition.Parameters`.
-- **Tests**: `internal/provider/provider_test.go` covers request validation, Ollama request conversion, and the provider response path using `httptest`.
+- **Tests**: `internal/provider/provider_test.go` covers request validation, Ollama request conversion, the provider response path, local model discovery, model availability, model pulling, malformed responses, and HTTP failures using `httptest`.
 - **Integration test**: `internal/provider/provider_integration_test.go` verifies communication with a local Ollama instance.
 
 Run provider unit tests from the repository root with:
