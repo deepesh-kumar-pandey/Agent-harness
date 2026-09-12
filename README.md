@@ -57,6 +57,17 @@ The full unit-test suite currently passes:
 go test ./...
 ```
 
+### CLI commands
+
+After startup, the interactive CLI supports these commands:
+
+- `help` - Show the available CLI commands.
+- `model` - Show the active model and how it was selected.
+- `clear` - Clear the terminal screen.
+- `exit` - Exit the CLI.
+
+Any other input is sent to the agent as a chat request.
+
 ### Local Ollama model setup
 
 The CLI uses the model configured in `config/config.json` by default:
