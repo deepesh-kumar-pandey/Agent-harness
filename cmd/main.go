@@ -15,6 +15,14 @@ import (
 	toolspkg "agent-harness/internal/tools"
 )
 
+type CommandResult int
+
+const (
+	CommandNotHandled CommandResult = iota
+	CommandHandled
+	CommandExit
+)
+
 func resolveModel(configModel string) (string, string) {
 	if model := strings.TrimSpace(os.Getenv("OLLAMA_MODEL")); model != "" {
 		return model, "environment"
@@ -54,7 +62,6 @@ func selectModel(
 	input *bufio.Scanner,
 	output io.Writer,
 ) (string, string, error) {
-
 	manager, ok := providerClient.(providerpkg.LocalModelManager)
 	if !ok {
 		return configuredModel, configuredSource, nil
@@ -162,6 +169,43 @@ func containsModel(models []string, target string) bool {
 	return false
 }
 
+// clearTerminal clears the terminal screen.
+//
+// output is the destination where the terminal escape sequence is written.
+//
+// \033[H moves the cursor to the top-left of the terminal.
+// \033[2J clears the terminal screen.
+func clearTerminal(output io.Writer) {
+	fmt.Fprint(output, "\033[H\033[2J")
+}
+
+func handleCommand(input string, model string, modelSource string, output io.Writer) CommandResult {
+	switch input {
+	case "help":
+		fmt.Fprintln(output, "Available commands: help, exit, model, clear")
+		return CommandHandled
+
+	case "model":
+		fmt.Fprintf(
+			output,
+			"Current model : %s\nSource: %s\n",
+			model,
+			modelSource,
+		)
+		return CommandHandled
+
+	case "clear":
+		clearTerminal(output)
+		return CommandHandled
+
+	case "exit":
+		return CommandExit
+
+	default:
+		return CommandNotHandled
+	}
+}
+
 func main() {
 	appConfig, err := loadConfig()
 	if err != nil {
@@ -217,12 +261,18 @@ func main() {
 
 		input := strings.TrimSpace(scanner.Text())
 
-		if input == "exit" {
+		result := handleCommand(
+			input,
+			model,
+			modelSource,
+			os.Stdout,
+		)
+
+		if result == CommandExit {
 			break
 		}
 
-		if input == "help" {
-			fmt.Println("Available commands: help, exit")
+		if result == CommandHandled {
 			continue
 		}
 

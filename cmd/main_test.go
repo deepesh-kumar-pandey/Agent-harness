@@ -146,8 +146,10 @@ func TestSelectModel(t *testing.T) {
 			expectMessage:  "pull success",
 		},
 		{
-			name:           "Retries after pull failure",
-			provider:       &fakeLocalProvider{pullErrors: []error{errors.New("download failed")}},
+			name: "Retries after pull failure",
+			provider: &fakeLocalProvider{
+				pullErrors: []error{errors.New("download failed")},
+			},
 			configured:     "llama3.1",
 			input:          "p\np\n",
 			expected:       "llama3.1",
@@ -157,8 +159,10 @@ func TestSelectModel(t *testing.T) {
 			expectMessage:  "pull retry",
 		},
 		{
-			name:          "Quit after pull failure",
-			provider:      &fakeLocalProvider{pullErrors: []error{errors.New("download failed")}},
+			name: "Quit after pull failure",
+			provider: &fakeLocalProvider{
+				pullErrors: []error{errors.New("download failed")},
+			},
 			configured:    "llama3.1",
 			input:         "p\nq\n",
 			expectError:   true,
@@ -211,7 +215,11 @@ func TestSelectModel(t *testing.T) {
 			}
 
 			if !testCase.expectError && source != testCase.expectedSource {
-				t.Fatalf("expected source %q, got %q", testCase.expectedSource, source)
+				t.Fatalf(
+					"expected source %q, got %q",
+					testCase.expectedSource,
+					source,
+				)
 			}
 
 			if testCase.expectOutput != "" &&
@@ -232,5 +240,101 @@ func TestSelectModel(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestHandleCommand(t *testing.T) {
+	testCases := []struct {
+		name           string
+		input          string
+		model          string
+		modelSource    string
+		expectedResult CommandResult
+		expectedOutput string
+	}{
+		{
+			name:           "Help command",
+			input:          "help",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Available commands: help, exit, model, clear",
+		},
+		{
+			name:           "Model command",
+			input:          "model",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Current model : test-model\nSource: test-source",
+		},
+		{
+			name:           "Clear command",
+			input:          "clear",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "\033[H\033[2J",
+		},
+		{
+			name:           "Exit command",
+			input:          "exit",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandExit,
+		},
+		{
+			name:           "Normal input",
+			input:          "hello",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandNotHandled,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var output strings.Builder
+
+			got := handleCommand(
+				testCase.input,
+				testCase.model,
+				testCase.modelSource,
+				&output,
+			)
+
+			if got != testCase.expectedResult {
+				t.Fatalf(
+					"handleCommand() = %v, expectedResult = %v",
+					got,
+					testCase.expectedResult,
+				)
+			}
+
+			if testCase.expectedOutput != "" &&
+				!strings.Contains(output.String(), testCase.expectedOutput) {
+				t.Fatalf(
+					"expected output to contain %q, got %q",
+					testCase.expectedOutput,
+					output.String(),
+				)
+			}
+		})
+	}
+}
+
+func TestClearTerminal(t *testing.T) {
+	var output strings.Builder
+
+	clearTerminal(&output)
+
+	expected := "\033[H\033[2J"
+
+	if output.String() != expected {
+		t.Fatalf(
+			"clearTerminal() = %q, expected %q",
+			output.String(),
+			expected,
+		)
 	}
 }
