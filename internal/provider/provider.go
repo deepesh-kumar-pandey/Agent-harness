@@ -105,6 +105,8 @@ func (o *OllamaProvider) ListModels() ([]string, error) {
 		baseURL = "http://localhost:11434"
 	}
 
+	baseURL = strings.TrimRight(baseURL, "/")
+
 	client := o.Client
 
 	if client == nil {
@@ -113,7 +115,7 @@ func (o *OllamaProvider) ListModels() ([]string, error) {
 
 	req, err := http.NewRequest(
 		http.MethodGet,
-		strings.TrimRight(baseURL, "/")+"/api/tags",
+		baseURL+"/api/tags",
 		nil,
 	)
 	if err != nil {
@@ -172,6 +174,8 @@ func (o *OllamaProvider) PullModel(name string) error {
 		baseURL = "http://localhost:11434"
 	}
 
+	baseURL = strings.TrimRight(baseURL, "/")
+
 	client := o.Client
 
 	if client == nil {
@@ -185,7 +189,7 @@ func (o *OllamaProvider) PullModel(name string) error {
 
 	req, err := http.NewRequest(
 		http.MethodPost,
-		strings.TrimRight(baseURL, "/")+"/api/pull",
+		baseURL+"/api/pull",
 		bytes.NewBuffer(data),
 	)
 	if err != nil {
@@ -217,7 +221,6 @@ func (o *OllamaProvider) PullModel(name string) error {
 func convertToOllamaMessages(
 	messages []Message,
 ) []OllamaMessage {
-
 	result := make(
 		[]OllamaMessage,
 		0,
@@ -225,7 +228,6 @@ func convertToOllamaMessages(
 	)
 
 	for _, message := range messages {
-
 		toolCalls := make(
 			[]OllamaToolCall,
 			0,
@@ -260,7 +262,6 @@ func convertToOllamaMessages(
 func convertFromOllamaMessage(
 	message OllamaMessage,
 ) Message {
-
 	toolCalls := make(
 		[]ToolCall,
 		0,
@@ -287,7 +288,6 @@ func convertFromOllamaMessage(
 func convertToOllamaRequest(
 	request ChatRequest,
 ) OllamaChatRequest {
-
 	tools := make(
 		[]OllamaToolDefinition,
 		0,
@@ -319,12 +319,13 @@ func convertToOllamaRequest(
 func (o OllamaProvider) Chat(
 	request ChatRequest,
 ) (ChatResponse, error) {
-
 	baseURL := o.BaseURL
 
 	if baseURL == "" {
 		baseURL = "http://localhost:11434"
 	}
+
+	baseURL = strings.TrimRight(baseURL, "/")
 
 	client := o.Client
 
@@ -349,7 +350,6 @@ func (o OllamaProvider) Chat(
 	ollamaRequest := convertToOllamaRequest(request)
 
 	data, err := json.Marshal(ollamaRequest)
-
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf(
 			"failed to encode request: %w",
@@ -362,7 +362,6 @@ func (o OllamaProvider) Chat(
 		baseURL+"/api/chat",
 		bytes.NewBuffer(data),
 	)
-
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf(
 			"failed to create request: %w",
@@ -376,7 +375,6 @@ func (o OllamaProvider) Chat(
 	)
 
 	resp, err := client.Do(req)
-
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf(
 			"failed to contact ollama: %w",
@@ -396,7 +394,6 @@ func (o OllamaProvider) Chat(
 	err = json.NewDecoder(
 		resp.Body,
 	).Decode(&ollamaResp)
-
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf(
 			"failed to decode ollama response: %w",

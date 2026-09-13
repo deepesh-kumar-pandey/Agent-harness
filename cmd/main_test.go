@@ -338,3 +338,45 @@ func TestClearTerminal(t *testing.T) {
 		)
 	}
 }
+
+func TestContainsModel(t *testing.T) {
+	testCases := []struct {
+		name     string
+		models   []string
+		target   string
+		expected bool
+	}{
+		{
+			name:     "Model exists",
+			models:   []string{"llama3.1", "mistral"},
+			target:   "mistral",
+			expected: true,
+		},
+		{
+			name:     "Model does not exist",
+			models:   []string{"llama3.1", "mistral"},
+			target:   "qwen",
+			expected: false,
+		},
+		{
+			name:     "Empty model list",
+			models:   []string{},
+			target:   "llama3.1",
+			expected: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := containsModel(testCase.models, testCase.target)
+
+			if got != testCase.expected {
+				t.Fatalf(
+					"containsModel() = %v, expected %v",
+					got,
+					testCase.expected,
+				)
+			}
+		})
+	}
+}
