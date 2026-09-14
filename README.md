@@ -12,8 +12,9 @@ The project currently supports:
 * Ollama integration with native tool calling
 * Local model discovery and pulling
 * Native local tools
-* MCP client foundation
-* MCP tool wrappers
+* MCP client creation and connection
+* MCP tool discovery
+* MCP tool wrappers and execution
 * Credential storage
 * In-memory conversation history
 * Agent and orchestrator execution
@@ -21,6 +22,8 @@ The project currently supports:
 * Unit and integration testing
 
 Ollama remains the current fully integrated provider. Additional cloud providers can be added through the provider abstraction without changing the Agent or Orchestrator layers.
+
+MCP support is currently implemented through the client and tool-wrapper layers. The next integration step is exposing discovered MCP tools through the existing Agent and Tool Registry.
 
 ## Features
 
@@ -36,13 +39,15 @@ Ollama remains the current fully integrated provider. Additional cloud providers
 * Structured JSON tool-call handling
 * Maximum tool-call protection through `WithMaxToolCalls`
 * Calculator, filesystem, and shell tools
-* MCP client foundation
+* MCP client creation and server connection
+* MCP tool discovery
 * MCP tool abstraction
+* MCP tool execution
 * Local credential storage
 * Interactive CLI
 * Unit tests
 * Ollama integration tests
-* End-to-end tool execution
+* End-to-end native tool execution
 
 ## Architecture
 
@@ -74,7 +79,8 @@ The layers have distinct responsibilities:
 * **Agent** owns the Tool Registry and in-memory conversation history, and provides tool execution.
 * **Orchestrator** coordinates the agent loop, provider communication, tool calls, tool results, and maximum tool-call protection.
 * **Tool Registry** registers, retrieves, lists, removes, and exposes schemas for native tools.
-* **MCP Client** manages communication with MCP servers and provides MCP tools to the Agent runtime.
+* **MCP Client** creates MCP client sessions, connects to MCP servers, and discovers available MCP tools.
+* **MCP Tool Wrapper** represents an MCP tool locally and forwards execution requests to the connected MCP server.
 * **Concrete Tools** perform local operations.
 * **MCP Servers** provide external tools through the Model Context Protocol.
 
@@ -82,18 +88,29 @@ The LLM/provider produces the tool-call decision. The Agent does not plan or dec
 
 ## Runtime Flow
 
-For a normal chat request, the runtime follows this sequence:
+For a normal native-tool chat request, the runtime follows this sequence:
 
 1. The CLI creates a `ChatRequest` containing the user's message.
 2. The Orchestrator adds the message to the Agent's in-memory history.
-3. The Agent exposes available native and MCP tool definitions.
+3. The Agent exposes available native tool definitions.
 4. The Provider receives the conversation and available tool definitions.
 5. The Provider returns either a final response or one or more tool calls.
 6. The Orchestrator executes each tool call through the Agent.
-7. The Agent resolves the requested native or MCP tool.
+7. The Agent resolves the requested native tool through the Tool Registry.
 8. The tool result is added to the conversation.
 9. The updated conversation is sent back to the Provider.
 10. The loop continues until the Provider returns a final response or the configured maximum tool-call limit is reached.
+
+MCP currently has a separate client flow:
+
+1. The MCP client is created.
+2. The client connects to an MCP server through an SDK transport.
+3. A client session is established.
+4. Available MCP tools are requested from the server.
+5. Each discovered MCP tool can be wrapped by the Agent Harness MCP tool abstraction.
+6. The wrapper forwards execution requests to the MCP server through the active session.
+
+The MCP tools are not yet automatically registered with the existing native Tool Registry. Integrating that boundary is the next planned step.
 
 The orchestrator also accepts structured JSON responses containing a `content` value and optional `tool_call` object.
 
@@ -265,6 +282,80 @@ The `internal/mcp` package provides the foundation for Model Context Protocol in
 
 MCP allows Agent Harness to communicate with external MCP servers and use tools provided by those servers.
 
+The MCP client currently provides the following functionality:
+
+#### `NewClient`
+
+Creates an Agent Harness MCP client backed by the official MCP SDK.
+
+The client identifies itself to MCP servers using the Agent Harness implementation name and version.
+
+```go
+client := mcp.NewClient()
+```
+
+#### `Connect`
+
+Connects the MCP client to an MCP server using an SDK transport and returns an active `ClientSession`.
+
+```go
+session, err := client.Connect(ctx, transport)
+```
+
+The transport determines how communication takes place. The current abstraction accepts any MCP SDK `Transport`, allowing transports such as in-memory or command-based transports to be used without changing the Agent Harness client API.
+
+#### `ListTools`
+
+Requests the available tools from an MCP server through an active client session.
+
+```go
+tools, err := client.ListTools(ctx, session)
+```
+
+The method returns the MCP SDK tool definitions discovered from the server.
+
+#### `NewTool`
+
+Wraps an MCP SDK tool in the Agent Harness MCP tool abstraction.
+
+```go
+tool := mcp.NewTool(toolDefinition)
+```
+
+The wrapper keeps the MCP tool definition locally while allowing execution through the associated MCP session.
+
+#### `Name`
+
+Returns the name provided by the MCP server for the wrapped tool.
+
+```go
+name := tool.Name()
+```
+
+#### `Description`
+
+Returns the description provided by the MCP server for the wrapped tool.
+
+```go
+description := tool.Description()
+```
+
+#### `Execute`
+
+Forwards a tool execution request to the MCP server through the active client session.
+
+```go
+result, err := tool.Execute(ctx, session, args)
+```
+
+The method accepts:
+
+* `context.Context` for operation lifecycle, cancellation, and deadlines
+* An active MCP `ClientSession`
+* `map[string]any` containing the tool-specific arguments
+
+The MCP server executes the requested operation and returns an MCP `CallToolResult`.
+
 The MCP layer is kept separate from native tools:
 
 ```text
@@ -272,20 +363,20 @@ Native Tools
      |
 Tool Registry
      |
-     +--------+
-              |
-             Agent
-              |
-          Orchestrator
-              |
-          MCP Client
-              |
-         MCP Servers
+     +----------------+
+                      |
+                    Agent
+                      |
+                 Orchestrator
+                      |
+                  MCP Client
+                      |
+                 MCP Servers
 ```
 
 MCP is an extension of the existing tool architecture rather than a replacement for native tools.
 
-The current MCP implementation provides the client and tool abstractions required to build the MCP execution layer.
+The current MCP implementation provides client creation, server connection, tool discovery, tool wrapping, and remote tool execution. The next step is integrating these wrapped tools with the existing Agent and Tool Registry.
 
 ## Built-in Tools
 
@@ -409,6 +500,17 @@ Run static checks:
 go vet ./...
 ```
 
+The MCP package includes unit tests for:
+
+* MCP client creation
+* MCP client connection
+* MCP tool discovery
+* MCP tool wrapper creation
+* MCP tool name and description access
+* MCP tool execution
+
+The MCP tests use the SDK's in-memory transport, allowing client/server communication to be tested without requiring an external MCP server.
+
 The orchestrator integration test is opt-in and requires a running Ollama service and an available configured model:
 
 ```bash
@@ -447,13 +549,13 @@ The result is added to the conversation and sent back to the Provider.
 
 The Provider then produces the final response.
 
-The same architecture is intended to support tools provided through MCP.
+The same architecture is being extended to support tools provided through MCP.
 
 ## Architectural Principles
 
 ### Separation of Concerns
 
-Provider communication, coordination, tool access, registry management, credential storage, and concrete operations remain separate.
+Provider communication, coordination, tool access, registry management, credential storage, MCP communication, and concrete operations remain separate.
 
 ### Provider-Neutral Contracts
 
@@ -463,7 +565,7 @@ The Agent and Orchestrator use shared message and tool-call types rather than pr
 
 Every native tool implements the same interface and publishes its JSON Schema.
 
-MCP tools are exposed through the MCP layer while remaining separate from native tool implementations.
+MCP tools are exposed through the MCP layer while remaining separate from native tool implementations until they are integrated into the shared tool boundary.
 
 ### Bounded Execution
 
@@ -500,16 +602,22 @@ Provider implementations, native tools, MCP servers, and credential storage can 
 | Credential abstraction                           | Implemented |
 | Local file credential store                      | Implemented |
 | Credential Set/Get/Delete operations             | Implemented |
-| MCP client foundation                            | Implemented |
-| MCP tool abstraction                             | Implemented |
+| MCP client creation                              | Implemented |
+| MCP server connection                            | Implemented |
+| MCP tool discovery                               | Implemented |
+| MCP tool wrapper                                 | Implemented |
+| MCP tool name and description access             | Implemented |
+| MCP tool execution                               | Implemented |
+| MCP integration with Agent/Tool Registry         | Planned     |
 | Unit and integration tests                       | Implemented |
 
 ## Roadmap
 
 The following are planned extensions:
 
-* Complete MCP session and transport integration
-* Expose MCP tools alongside native tools through the Agent
+* Integrate MCP tools with the existing Agent and Tool Registry
+* Expose native and MCP tools through a unified tool boundary
+* Complete broader MCP session and transport management
 * Additional LLM provider implementations
 * CLI credential management commands
 * Persistent sessions and conversation storage
