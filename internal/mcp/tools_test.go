@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -179,5 +180,76 @@ func TestToolExecute(t *testing.T) {
 			t.Fatalf("server returned error: %v", err)
 		}
 	default:
+	}
+}
+
+// Tool Schema unit test
+func TestToolSchema(t *testing.T) {
+	testCases := []struct {
+		name        string
+		tool        mcpsdk.Tool
+		expectNil   bool
+		expectedKey string
+		expectedVal any
+	}{
+		{
+			name: "returns input schema",
+			tool: mcpsdk.Tool{
+				Name:        "test-tool",
+				Description: "test description",
+				InputSchema: &jsonschema.Schema{
+					Type: "object",
+				},
+			},
+			expectNil:   false,
+			expectedKey: "type",
+			expectedVal: "object",
+		},
+		{
+			name: "returns nil when input schema is nil",
+			tool: mcpsdk.Tool{
+				Name:        "test-tool",
+				Description: "test description",
+			},
+			expectNil: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Log("Creating MCP tool")
+
+			tool := NewTool(testCase.tool)
+			schema := tool.Schema()
+
+			if testCase.expectNil {
+				if schema != nil {
+					t.Fatalf("expected nil schema, got %v", schema)
+				}
+				return
+			}
+
+			if schema == nil {
+				t.Fatal("expected schema, got nil")
+			}
+
+			got, exists := schema[testCase.expectedKey]
+			if !exists {
+				t.Fatalf(
+					"expected schema to contain key %q",
+					testCase.expectedKey,
+				)
+			}
+
+			if got != testCase.expectedVal {
+				t.Fatalf(
+					"expected schema value %v, got %v",
+					testCase.expectedVal,
+					got,
+				)
+			}
+
+			t.Log("MCP tool schema retrieved successfully")
+		})
 	}
 }
