@@ -15,6 +15,7 @@ The project currently supports:
 * MCP client creation and connection
 * MCP tool discovery
 * MCP tool wrappers and execution
+* MCP tools integrated with the existing Tool Registry
 * Credential storage
 * In-memory conversation history
 * Agent and orchestrator execution
@@ -23,7 +24,7 @@ The project currently supports:
 
 Ollama remains the current fully integrated provider. Additional cloud providers can be added through the provider abstraction without changing the Agent or Orchestrator layers.
 
-MCP support is currently implemented through the client and tool-wrapper layers. The next integration step is exposing discovered MCP tools through the existing Agent and Tool Registry.
+MCP tools can now be discovered from connected MCP servers, adapted to the existing `tools.Tool` interface, and registered with the Tool Registry alongside native tools.
 
 ## Features
 
@@ -42,6 +43,8 @@ MCP support is currently implemented through the client and tool-wrapper layers.
 * MCP client creation and server connection
 * MCP tool discovery
 * MCP tool abstraction
+* MCP tool adapter for the native `tools.Tool` interface
+* MCP tool registration with the Tool Registry
 * MCP tool execution
 * Local credential storage
 * Interactive CLI
@@ -62,14 +65,27 @@ MCP support is currently implemented through the client and tool-wrapper layers.
                              |
                              v
                            Agent
-                        /         \
-                       /           \
-                      v             v
-              Tool Registry      MCP Client
-                   |                 |
-                   v                 v
-            Native Tools        MCP Servers
+                             |
+                +------------+------------+
+                |                         |
+                v                         v
+          Tool Registry              MCP Client
+                |                         |
+        +-------+-------+                 v
+        |       |       |             MCP Servers
+        v       v       v                 |
+   Calculator Shell Filesystem            |
+                |                         |
+                +------------+------------+
+                             |
+                             v
+                         ToolAdapter
+                             |
+                             v
+                       Tool Registry
 ```
+
+The MCP adapter allows discovered MCP tools to enter the same tool boundary as native tools.
 
 The layers have distinct responsibilities:
 
@@ -78,13 +94,14 @@ The layers have distinct responsibilities:
 * **Provider** communicates with the LLM and exposes provider-neutral types. The Ollama implementation converts those types to and from the Ollama API.
 * **Agent** owns the Tool Registry and in-memory conversation history, and provides tool execution.
 * **Orchestrator** coordinates the agent loop, provider communication, tool calls, tool results, and maximum tool-call protection.
-* **Tool Registry** registers, retrieves, lists, removes, and exposes schemas for native tools.
+* **Tool Registry** registers, retrieves, lists, removes, and exposes schemas for native and adapted MCP tools.
 * **MCP Client** creates MCP client sessions, connects to MCP servers, and discovers available MCP tools.
 * **MCP Tool Wrapper** represents an MCP tool locally and forwards execution requests to the connected MCP server.
+* **Tool Adapter** converts an MCP tool into the existing `tools.Tool` interface so it can be registered and executed through the Tool Registry.
 * **Concrete Tools** perform local operations.
 * **MCP Servers** provide external tools through the Model Context Protocol.
 
-The LLM/provider produces the tool-call decision. The Agent does not plan or decide what should happen. The Orchestrator coordinates execution, the Registry manages native tools, the MCP layer manages MCP tools, and the selected tool performs the operation.
+The LLM/provider produces the tool-call decision. The Agent does not plan or decide what should happen. The Orchestrator coordinates execution, the Registry manages the available tools, the MCP layer manages MCP communication, and the selected tool performs the operation.
 
 ## Runtime Flow
 
@@ -92,27 +109,28 @@ For a normal native-tool chat request, the runtime follows this sequence:
 
 1. The CLI creates a `ChatRequest` containing the user's message.
 2. The Orchestrator adds the message to the Agent's in-memory history.
-3. The Agent exposes available native tool definitions.
+3. The Agent exposes available tool definitions from the Tool Registry.
 4. The Provider receives the conversation and available tool definitions.
 5. The Provider returns either a final response or one or more tool calls.
 6. The Orchestrator executes each tool call through the Agent.
-7. The Agent resolves the requested native tool through the Tool Registry.
+7. The Agent resolves the requested tool through the Tool Registry.
 8. The tool result is added to the conversation.
 9. The updated conversation is sent back to the Provider.
 10. The loop continues until the Provider returns a final response or the configured maximum tool-call limit is reached.
 
-MCP currently has a separate client flow:
+For MCP tools, the registration flow is:
 
 1. The MCP client is created.
 2. The client connects to an MCP server through an SDK transport.
 3. A client session is established.
 4. Available MCP tools are requested from the server.
-5. Each discovered MCP tool can be wrapped by the Agent Harness MCP tool abstraction.
-6. The wrapper forwards execution requests to the MCP server through the active session.
-
-The MCP tools are not yet automatically registered with the existing native Tool Registry. Integrating that boundary is the next planned step.
-
-The orchestrator also accepts structured JSON responses containing a `content` value and optional `tool_call` object.
+5. Each discovered MCP tool is wrapped by the Agent Harness MCP tool abstraction.
+6. A `ToolAdapter` converts the MCP tool into the native `tools.Tool` interface.
+7. The adapted tool is registered with the existing Tool Registry.
+8. The Agent can expose the MCP tool alongside native tools.
+9. When the Provider requests the MCP tool, the Agent resolves it through the Tool Registry.
+10. The adapter forwards execution through the MCP client session to the MCP server.
+11. The MCP result is returned to the Agent and added to the conversation.
 
 Conversation history is retained only in memory for the lifetime of the Agent instance.
 
@@ -120,6 +138,7 @@ Conversation history is retained only in memory for the lifetime of the Agent in
 
 ```text
 agent-harness/
+
 ├── cmd/
 │   └── agent/
 │       ├── main.go
@@ -138,6 +157,8 @@ agent-harness/
 │   │   ├── store.go
 │   │   └── store_test.go
 │   ├── mcp/
+│   │   ├── adapter.go
+│   │   ├── adapter_test.go
 │   │   ├── client.go
 │   │   ├── client_test.go
 │   │   ├── tools.go
@@ -238,6 +259,8 @@ The Agent:
 
 The Agent does not select tools or make planning decisions.
 
+Both native tools and adapted MCP tools can be exposed through the Tool Registry.
+
 ### Orchestrator
 
 The Orchestrator coordinates:
@@ -254,6 +277,8 @@ The Orchestrator coordinates:
 
 ### Tool Registry
 
+The Tool Registry provides a unified registry for tools that implement the native `tools.Tool` interface.
+
 The default registry contains:
 
 * `calculator`
@@ -269,16 +294,18 @@ The Registry supports:
 * `List`
 * `Schemas`
 
-Each registered native tool exposes:
+Each registered tool exposes:
 
 * Name
 * Description
 * Execution method
 * JSON Schema parameter definition
 
+MCP tools can also be registered after being converted through the MCP `ToolAdapter`.
+
 ### MCP
 
-The `internal/mcp` package provides the foundation for Model Context Protocol integration.
+The `internal/mcp` package provides Model Context Protocol integration.
 
 MCP allows Agent Harness to communicate with external MCP servers and use tools provided by those servers.
 
@@ -340,6 +367,14 @@ Returns the description provided by the MCP server for the wrapped tool.
 description := tool.Description()
 ```
 
+#### `Schema`
+
+Returns the MCP tool's input schema in the native `map[string]any` representation used by Agent Harness.
+
+```go
+schema := tool.Schema()
+```
+
 #### `Execute`
 
 Forwards a tool execution request to the MCP server through the active client session.
@@ -356,27 +391,68 @@ The method accepts:
 
 The MCP server executes the requested operation and returns an MCP `CallToolResult`.
 
-The MCP layer is kept separate from native tools:
+### MCP Tool Adapter
 
-```text
-Native Tools
-     |
-Tool Registry
-     |
-     +----------------+
-                      |
-                    Agent
-                      |
-                 Orchestrator
-                      |
-                  MCP Client
-                      |
-                 MCP Servers
+The `ToolAdapter` provides the boundary between MCP tools and the existing Agent Harness tool interface.
+
+```go
+adapter := mcp.NewToolAdapter(ctx, tool, session)
 ```
 
-MCP is an extension of the existing tool architecture rather than a replacement for native tools.
+The adapter implements the native:
 
-The current MCP implementation provides client creation, server connection, tool discovery, tool wrapping, and remote tool execution. The next step is integrating these wrapped tools with the existing Agent and Tool Registry.
+```go
+tools.Tool
+```
+
+interface.
+
+It forwards:
+
+* `Name()`
+* `Description()`
+* `Schema()`
+* `Execute()`
+
+to the underlying MCP tool while retaining the MCP session and execution context.
+
+This allows MCP tools to be registered in the same Tool Registry as native tools without making the native tool system depend directly on MCP.
+
+### MCP Tool Registration
+
+Discovered MCP tools can be registered with the existing Tool Registry through:
+
+```go
+err := mcp.RegisterTools(ctx, session, registry)
+```
+
+The registration process:
+
+1. Lists available MCP tools.
+2. Creates an Agent Harness MCP tool wrapper for each tool.
+3. Creates a `ToolAdapter` for each wrapper.
+4. Registers each adapter with the Tool Registry.
+
+This provides a unified tool boundary:
+
+```text
+                 Tool Registry
+                      |
+          +-----------+-----------+
+          |                       |
+          v                       v
+     Native Tools            MCP Adapters
+          |                       |
+          |                       v
+          |                  MCP Tools
+          |                       |
+          |                  MCP Server
+          |
+          v
+       Agent
+```
+
+MCP is therefore an extension of the existing tool architecture rather than a separate execution path.
 
 ## Built-in Tools
 
@@ -500,6 +576,12 @@ Run static checks:
 go vet ./...
 ```
 
+Format the project with:
+
+```bash
+gofmt -w .
+```
+
 The MCP package includes unit tests for:
 
 * MCP client creation
@@ -507,7 +589,13 @@ The MCP package includes unit tests for:
 * MCP tool discovery
 * MCP tool wrapper creation
 * MCP tool name and description access
+* MCP tool schema access
 * MCP tool execution
+* MCP Tool Adapter creation
+* MCP Tool Adapter name and description access
+* MCP Tool Adapter schema access
+* MCP Tool Adapter execution
+* MCP tool registration with the Tool Registry
 
 The MCP tests use the SDK's in-memory transport, allowing client/server communication to be tested without requiring an external MCP server.
 
@@ -549,7 +637,31 @@ The result is added to the conversation and sent back to the Provider.
 
 The Provider then produces the final response.
 
-The same architecture is being extended to support tools provided through MCP.
+For MCP tools, the same Tool Registry boundary can be used:
+
+```text
+Provider
+   |
+   v
+Orchestrator
+   |
+   v
+Agent
+   |
+   v
+Tool Registry
+   |
+   v
+ToolAdapter
+   |
+   v
+MCP Tool
+   |
+   v
+MCP Server
+```
+
+The MCP server performs the requested operation and returns the result through the active MCP session.
 
 ## Architectural Principles
 
@@ -561,11 +673,17 @@ Provider communication, coordination, tool access, registry management, credenti
 
 The Agent and Orchestrator use shared message and tool-call types rather than provider-specific response structures.
 
+### Unified Tool Boundary
+
+Native tools and MCP tools enter the Agent through the same `tools.Tool` interface and Tool Registry.
+
+MCP-specific communication remains isolated inside the MCP package and its adapter layer.
+
 ### Explicit Tool Boundaries
 
-Every native tool implements the same interface and publishes its JSON Schema.
+Every registered tool implements the same interface and publishes its JSON Schema.
 
-MCP tools are exposed through the MCP layer while remaining separate from native tool implementations until they are integrated into the shared tool boundary.
+Native tools implement the interface directly, while MCP tools use `ToolAdapter` to satisfy the same contract.
 
 ### Bounded Execution
 
@@ -607,16 +725,16 @@ Provider implementations, native tools, MCP servers, and credential storage can 
 | MCP tool discovery                               | Implemented |
 | MCP tool wrapper                                 | Implemented |
 | MCP tool name and description access             | Implemented |
+| MCP tool schema access                           | Implemented |
 | MCP tool execution                               | Implemented |
-| MCP integration with Agent/Tool Registry         | Planned     |
+| MCP ToolAdapter                                  | Implemented |
+| MCP integration with Tool Registry               | Implemented |
 | Unit and integration tests                       | Implemented |
 
 ## Roadmap
 
 The following are planned extensions:
 
-* Integrate MCP tools with the existing Agent and Tool Registry
-* Expose native and MCP tools through a unified tool boundary
 * Complete broader MCP session and transport management
 * Additional LLM provider implementations
 * CLI credential management commands
