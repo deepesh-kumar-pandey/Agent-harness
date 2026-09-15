@@ -1,13 +1,17 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
 	agentpkg "agent-harness/internal/agent"
+	mcppkg "agent-harness/internal/mcp"
 	providerpkg "agent-harness/internal/provider"
 	toolspkg "agent-harness/internal/tools"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ─────────────────────────────────────────────
@@ -1430,4 +1434,155 @@ func TestOrchestratorRunAgentConversationHistory(t *testing.T) {
 
 	fmt.Println("Conversation history preserved successfully.")
 	fmt.Println("Orchestrator conversation history tests completed!")
+}
+
+// ─────────────────────────────────────────────
+// Test Orchestrator MCP Tool Call
+// ─────────────────────────────────────────────
+
+func TestOrchestratorRunAgentMCPToolCall(t *testing.T) {
+
+	fmt.Println("Starting Orchestrator MCP tool-call tests...")
+
+	ctx := context.Background()
+
+	server := mcpsdk.NewServer(
+		&mcpsdk.Implementation{
+			Name:    "test-server",
+			Version: "1.0.0",
+		},
+		nil,
+	)
+
+	mcpsdk.AddTool(
+		server,
+		&mcpsdk.Tool{
+			Name:        "mcp-test-tool",
+			Description: "Test MCP tool",
+		},
+		func(
+			ctx context.Context,
+			req *mcpsdk.CallToolRequest,
+			args map[string]any,
+		) (*mcpsdk.CallToolResult, map[string]any, error) {
+			return &mcpsdk.CallToolResult{
+					Content: []mcpsdk.Content{
+						&mcpsdk.TextContent{
+							Text: "MCP tool executed successfully",
+						},
+					},
+				},
+				nil,
+				nil
+		},
+	)
+
+	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
+
+	serverSession, err := server.Connect(
+		ctx,
+		serverTransport,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf(
+			"failed to connect MCP server: %v",
+			err,
+		)
+	}
+
+	client := mcppkg.NewClient()
+
+	clientSession, err := client.Connect(
+		ctx,
+		clientTransport,
+	)
+	if err != nil {
+		t.Fatalf(
+			"failed to connect MCP client: %v",
+			err,
+		)
+	}
+
+	defer clientSession.Close()
+	defer serverSession.Close()
+
+	registry := toolspkg.NewToolRegistry()
+
+	err = mcppkg.RegisterTools(
+		ctx,
+		clientSession,
+		registry,
+	)
+	if err != nil {
+		t.Fatalf(
+			"failed to register MCP tools: %v",
+			err,
+		)
+	}
+
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"",
+			"MCP tool executed successfully",
+		},
+		ToolCalls: [][]providerpkg.ToolCall{
+			{
+				{
+					Name:      "mcp-test-tool",
+					Arguments: map[string]any{},
+				},
+			},
+			nil,
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model: "test-model",
+		Messages: []providerpkg.Message{
+			{
+				Role:    "user",
+				Content: "Execute the MCP test tool",
+			},
+		},
+	}
+
+	response, err := testOrchestrator.RunAgent(request)
+
+	if err != nil {
+		t.Fatalf(
+			"expected no error, got: %v",
+			err,
+		)
+	}
+
+	if response.Content != "MCP tool executed successfully" {
+		t.Fatalf(
+			"expected content %q, got %q",
+			"MCP tool executed successfully",
+			response.Content,
+		)
+	}
+
+	if response.ToolCall != nil {
+		t.Fatalf(
+			"expected no tool call after execution",
+		)
+	}
+
+	fmt.Printf(
+		"MCP tool call executed successfully: %s\n",
+		response.Content,
+	)
+
+	fmt.Println(
+		"Orchestrator MCP tool-call tests completed!",
+	)
 }

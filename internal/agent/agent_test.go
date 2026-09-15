@@ -1,9 +1,13 @@
 package tools
 
 import (
+	"context"
 	"testing"
 
+	"agent-harness/internal/mcp"
 	"agent-harness/internal/tools"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestNewAgent(t *testing.T) {
@@ -287,5 +291,115 @@ func TestAgentGetToolSchemas(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// ─────────────────────────────────────────
+// MCP Tool Execution
+// ─────────────────────────────────────────
+func TestAgentRunMCPTool(t *testing.T) {
+	ctx := context.Background()
+
+	server := mcpsdk.NewServer(
+		&mcpsdk.Implementation{
+			Name:    "test-server",
+			Version: "1.0.0",
+		},
+		nil,
+	)
+
+	mcpsdk.AddTool(
+		server,
+		&mcpsdk.Tool{
+			Name:        "mcp-test-tool",
+			Description: "Test MCP tool",
+		},
+		func(
+			ctx context.Context,
+			req *mcpsdk.CallToolRequest,
+			args map[string]any,
+		) (*mcpsdk.CallToolResult, map[string]any, error) {
+			return &mcpsdk.CallToolResult{
+					Content: []mcpsdk.Content{
+						&mcpsdk.TextContent{
+							Text: "MCP tool executed successfully",
+						},
+					},
+				},
+				nil,
+				nil
+		},
+	)
+
+	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
+
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("failed to connect MCP server: %v", err)
+	}
+
+	client := mcp.NewClient()
+
+	clientSession, err := client.Connect(ctx, clientTransport)
+	if err != nil {
+		t.Fatalf("failed to connect MCP client: %v", err)
+	}
+
+	defer clientSession.Close()
+	defer serverSession.Close()
+
+	registry := tools.NewToolRegistry()
+
+	err = mcp.RegisterTools(
+		ctx,
+		clientSession,
+		registry,
+	)
+	if err != nil {
+		t.Fatalf("failed to register MCP tools: %v", err)
+	}
+
+	agent := NewAgent(registry)
+
+	result, err := agent.Run(
+		"mcp-test-tool",
+		map[string]any{},
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	callResult, ok := result.(*mcpsdk.CallToolResult)
+	if !ok {
+		t.Fatalf(
+			"expected *mcpsdk.CallToolResult, got %T",
+			result,
+		)
+	}
+
+	if len(callResult.Content) != 1 {
+		t.Fatalf(
+			"expected 1 content item, got %d",
+			len(callResult.Content),
+		)
+	}
+
+	textContent, ok := callResult.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf(
+			"expected *mcpsdk.TextContent, got %T",
+			callResult.Content[0],
+		)
+	}
+
+	expected := "MCP tool executed successfully"
+
+	if textContent.Text != expected {
+		t.Fatalf(
+			"expected %q, got %q",
+			expected,
+			textContent.Text,
+		)
 	}
 }
