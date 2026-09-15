@@ -51,6 +51,7 @@ MCP tools can now be discovered from connected MCP servers, adapted to the exist
 * Unit tests
 * Ollama integration tests
 * End-to-end native tool execution
+* End-to-end MCP tool execution through the Agent and Orchestrator
 
 ## Architecture
 
@@ -66,23 +67,21 @@ MCP tools can now be discovered from connected MCP servers, adapted to the exist
                              v
                            Agent
                              |
-                +------------+------------+
-                |                         |
-                v                         v
-          Tool Registry              MCP Client
-                |                         |
-        +-------+-------+                 v
-        |       |       |             MCP Servers
-        v       v       v                 |
-   Calculator Shell Filesystem            |
-                |                         |
-                +------------+------------+
-                             |
-                             v
-                         ToolAdapter
-                             |
                              v
                        Tool Registry
+                       /           \
+                      /             \
+                     v               v
+             Native Tools        MCP Adapter
+             /    |    \             |
+            v     v     v            v
+      Calculator Shell Filesystem  MCP Tool
+                                      |
+                                      v
+                                 MCP Client
+                                      |
+                                      v
+                                 MCP Server
 ```
 
 The MCP adapter allows discovered MCP tools to enter the same tool boundary as native tools.
@@ -309,7 +308,7 @@ The `internal/mcp` package provides Model Context Protocol integration.
 
 MCP allows Agent Harness to communicate with external MCP servers and use tools provided by those servers.
 
-The MCP client currently provides the following functionality:
+The MCP client currently provides the following functionality.
 
 #### `NewClient`
 
@@ -449,7 +448,7 @@ This provides a unified tool boundary:
           |                  MCP Server
           |
           v
-       Agent
+        Agent
 ```
 
 MCP is therefore an extension of the existing tool architecture rather than a separate execution path.
@@ -582,8 +581,21 @@ Format the project with:
 gofmt -w .
 ```
 
-The MCP package includes unit tests for:
+The project contains unit and integration-style tests covering:
 
+* Provider configuration and behavior
+* Credential Set/Get/Delete operations
+* Tool Registry operations
+* Calculator execution
+* Filesystem operations
+* Shell execution
+* Agent tool execution
+* Agent conversation history
+* Orchestrator execution
+* Native tool calls
+* Multiple native tool calls
+* Tool-call failure handling
+* Maximum tool-call protection
 * MCP client creation
 * MCP client connection
 * MCP tool discovery
@@ -596,6 +608,8 @@ The MCP package includes unit tests for:
 * MCP Tool Adapter schema access
 * MCP Tool Adapter execution
 * MCP tool registration with the Tool Registry
+* Agent execution of MCP tools
+* Orchestrator execution of MCP tools
 
 The MCP tests use the SDK's in-memory transport, allowing client/server communication to be tested without requiring an external MCP server.
 
@@ -729,16 +743,21 @@ Provider implementations, native tools, MCP servers, and credential storage can 
 | MCP tool execution                               | Implemented |
 | MCP ToolAdapter                                  | Implemented |
 | MCP integration with Tool Registry               | Implemented |
+| Agent MCP tool execution                         | Implemented |
+| Orchestrator MCP tool execution                  | Implemented |
 | Unit and integration tests                       | Implemented |
 
 ## Roadmap
 
 The following are planned extensions:
 
-* Complete broader MCP session and transport management
+* Broader MCP session lifecycle and transport management
 * Additional LLM provider implementations
 * CLI credential management commands
 * Persistent sessions and conversation storage
 * Search and information-retrieval tools
 * Additional native and MCP tools
+* Improved CLI experience and configuration management
+* Streaming provider responses
+* Better error reporting and observability
 * Additional deployment options
