@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,4 +34,23 @@ func (t *Tool) Execute(
 		Name:      t.tool.Name,
 		Arguments: args,
 	})
+}
+
+func (t *Tool) Schema() map[string]any {
+	if t.tool.InputSchema == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(t.tool.InputSchema)
+	if err != nil {
+		return nil
+	}
+
+	var schema map[string]any
+
+	if err := json.Unmarshal(data, &schema); err != nil {
+		return nil
+	}
+
+	return schema
 }
