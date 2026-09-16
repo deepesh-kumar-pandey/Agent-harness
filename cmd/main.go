@@ -114,6 +114,13 @@ func selectModel(
 		fmt.Fprint(output, "> ")
 
 		if !input.Scan() {
+			if err := input.Err(); err != nil {
+				return "", "", fmt.Errorf(
+					"model selection input error: %w",
+					err,
+				)
+			}
+
 			return "", "", fmt.Errorf("model selection canceled")
 		}
 
@@ -179,7 +186,12 @@ func clearTerminal(output io.Writer) {
 	fmt.Fprint(output, "\033[H\033[2J")
 }
 
-func handleCommand(input string, model string, modelSource string, output io.Writer) CommandResult {
+func handleCommand(
+	input string,
+	model string,
+	modelSource string,
+	output io.Writer,
+) CommandResult {
 	switch input {
 	case "help":
 		fmt.Fprintln(output, "Available commands: help, exit, model, clear")
@@ -261,6 +273,10 @@ func main() {
 
 		input := strings.TrimSpace(scanner.Text())
 
+		if input == "" {
+			continue
+		}
+
 		result := handleCommand(
 			input,
 			model,
@@ -293,5 +309,9 @@ func main() {
 		}
 
 		fmt.Println(response.Content)
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Println("Input error:", err)
 	}
 }
