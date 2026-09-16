@@ -24,7 +24,7 @@ The project currently supports:
 
 Ollama remains the current fully integrated provider. Additional cloud providers can be added through the provider abstraction without changing the Agent or Orchestrator layers.
 
-MCP tools can now be discovered from connected MCP servers, adapted to the existing `tools.Tool` interface, and registered with the Tool Registry alongside native tools.
+MCP tools can be discovered from connected MCP servers, adapted to the existing `tools.Tool` interface, and registered with the Tool Registry alongside native tools. MCP support is currently exposed through the library and tests; the interactive CLI does not configure MCP servers.
 
 ## Features
 
@@ -139,12 +139,18 @@ Conversation history is retained only in memory for the lifetime of the Agent in
 agent-harness/
 
 ├── cmd/
-│   └── agent/
-│       ├── main.go
-│       └── main_test.go
+│   ├── main.go
+│   └── main_test.go
 ├── config/
 │   ├── config.go
-│   └── config.example.json
+│   ├── config.example.json
+│   └── config_test.go
+├── filesystem/
+│   ├── filesystem.go
+│   └── filesystem_test.go
+├── shell/
+│   ├── shell.go
+│   └── shell_test.go
 ├── internal/
 │   ├── agent/
 │   │   ├── agent.go
@@ -184,6 +190,9 @@ agent-harness/
 │       └── tools.go
 ├── go.mod
 ├── go.sum
+├── .github/
+│   └── workflows/
+│       └── go.yml
 ├── LICENSE
 ├── .gitignore
 └── README.md
@@ -474,6 +483,7 @@ Supports:
 * `read`
 * `write`
 * `list`
+* `search`
 * `exists`
 * `delete`
 
@@ -491,9 +501,9 @@ The CLI entry point is:
 go run ./cmd
 ```
 
-The CLI loads the configured provider and model and provides an interactive terminal interface.
+The CLI loads `config/config.json` (or `../config/config.json` when run from a nested working directory) and provides an interactive Ollama terminal interface. The current default model is `kirito1/qwen3-coder:4b` when no model is configured and `OLLAMA_MODEL` is not set.
 
-Before starting the CLI, make sure Ollama is running and the configured model is available. If the configured model is not installed, the CLI presents options to pull it, select another installed model, or quit. Empty input is ignored.
+Before starting the CLI, make sure Ollama is running. The CLI discovers local Ollama models. If the selected model is not installed, it allows you to explicitly pull that model, select an installed model, or quit. It does not silently download or replace a model, and empty input is ignored.
 
 Current commands include:
 
@@ -506,13 +516,15 @@ exit
 
 Any other input is treated as a chat request.
 
-The active Ollama model can be overridden for the current run with:
+The `model` command displays the active model and its source, such as `environment`, `config`, `default`, `local-selection`, or `pulled`.
+
+The active Ollama model can be overridden for the current run with `OLLAMA_MODEL`:
 
 ```bash
 OLLAMA_MODEL="your-model-name" go run ./cmd
 ```
 
-Credential management is handled separately from provider configuration.
+The CLI does not provide credential-management commands. Credential storage is handled separately from provider configuration.
 
 ## Ollama Setup
 
@@ -522,13 +534,13 @@ Start Ollama before running the CLI:
 ollama serve
 ```
 
-The default provider configuration is stored in:
+The CLI reads provider configuration from:
 
 ```text
-config/config.example.json
+config/config.json
 ```
 
-Example:
+The configuration must contain the following JSON fields:
 
 ```json
 {
@@ -540,6 +552,8 @@ Example:
   }
 }
 ```
+
+`config/config.example.json` is included as the example-file location, but the CLI does not load it automatically.
 
 If the configured model is not installed, the CLI can offer an explicit pull option or allow selection of an installed local model.
 
@@ -581,14 +595,16 @@ go vet ./...
 
 GitHub Actions runs the Go CI workflow for pushes to `main` and `feature/**`, and for pull requests targeting `main`. The workflow:
 
-* Verifies that all Go files are formatted with `gofmt`.
+* Checks that all Go files are formatted with `gofmt`.
 * Runs `go test ./...`.
 * Runs `go vet ./...`.
+
+The workflow does not set `OLLAMA_INTEGRATION=1` or `ORCHESTRATOR_INTEGRATION=1`, so Ollama integration tests are intentionally skipped by CI.
 
 Format the project with:
 
 ```bash
-gofmt -w .
+gofmt -w $(find . -name '*.go')
 ```
 
 The project contains unit and integration-style tests covering:
@@ -630,12 +646,6 @@ ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./i
 ```
 
 The provider integration test is also opt-in:
-
-```bash
-OLLAMA_INTEGRATION=1 go test -run TestOllamaProvider_Integration ./internal/provider -v
-```
-
-The provider package also contains a separate local Ollama integration test:
 
 ```bash
 OLLAMA_INTEGRATION=1 go test -run TestOllamaProvider_Integration ./internal/provider -v
@@ -739,14 +749,17 @@ Provider implementations, native tools, MCP servers, and credential storage can 
 | Provider abstraction                             | Implemented |
 | Ollama chat and native tool calling              | Implemented |
 | Local model discovery and pulling                | Implemented |
+| Local model presence checks                      | Implemented |
 | Provider-neutral message and tool types          | Implemented |
 | Agent tool access and conversation history       | Implemented |
 | Tool Registry and JSON Schema exposure           | Implemented |
 | Calculator, filesystem, and shell tools          | Implemented |
+| Filesystem recursive search                      | Implemented |
 | Orchestrator agent loop and tool-result feedback | Implemented |
 | Multiple native tool calls per provider response | Implemented |
 | Maximum tool-call protection                     | Implemented |
 | Interactive CLI                                  | Implemented |
+| GitHub Actions formatting, test, and vet checks  | Implemented |
 | Credential abstraction                           | Implemented |
 | Local file credential store                      | Implemented |
 | Credential Set/Get/Delete operations             | Implemented |
@@ -770,8 +783,9 @@ The following are planned extensions:
 * Broader MCP session lifecycle and transport management
 * Additional LLM provider implementations
 * CLI credential management commands
+* CLI MCP server configuration and registration
 * Persistent sessions and conversation storage
-* Search and information-retrieval tools
+* Information-retrieval tools
 * Additional native and MCP tools
 * Improved CLI experience and configuration management
 * Streaming provider responses
