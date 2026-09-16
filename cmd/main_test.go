@@ -39,6 +39,7 @@ func (f *fakeLocalProvider) PullModel(name string) error {
 
 	err := f.pullErrors[0]
 	f.pullErrors = f.pullErrors[1:]
+
 	return err
 }
 
@@ -54,6 +55,7 @@ func TestResolveModelUsesEnvOverride(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "custom-model")
 
 	got, source := resolveModel("config-model")
+
 	if got != "custom-model" || source != "environment" {
 		t.Fatalf(
 			"resolveModel() = (%q, %q), want (%q, %q)",
@@ -69,6 +71,7 @@ func TestResolveModelUsesConfigModel(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "")
 
 	got, source := resolveModel("config-model")
+
 	if got != "config-model" || source != "config" {
 		t.Fatalf(
 			"resolveModel() = (%q, %q), want (%q, %q)",
@@ -84,6 +87,7 @@ func TestResolveModelDefaultsToInstalledModel(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "")
 
 	got, source := resolveModel("")
+
 	if got != "kirito1/qwen3-coder:4b" || source != "default" {
 		t.Fatalf(
 			"resolveModel() = (%q, %q), want (%q, %q)",
@@ -106,7 +110,6 @@ func TestSelectModel(t *testing.T) {
 		expectError    bool
 		expectOutput   string
 		expectPulls    int
-		expectMessage  string
 	}{
 		{
 			name:           "Configured model is available",
@@ -132,7 +135,6 @@ func TestSelectModel(t *testing.T) {
 			expected:       "mistral:latest",
 			expectedSource: "local-selection",
 			expectOutput:   "Invalid choice",
-			expectMessage:  "selection flow",
 		},
 		{
 			name:           "Pulls configured model",
@@ -143,7 +145,6 @@ func TestSelectModel(t *testing.T) {
 			expectedSource: "pulled",
 			expectOutput:   "Model \"llama3.1\" pulled successfully.",
 			expectPulls:    1,
-			expectMessage:  "pull success",
 		},
 		{
 			name: "Retries after pull failure",
@@ -156,27 +157,31 @@ func TestSelectModel(t *testing.T) {
 			expectedSource: "pulled",
 			expectOutput:   "Failed to pull model \"llama3.1\": download failed",
 			expectPulls:    2,
-			expectMessage:  "pull retry",
 		},
 		{
 			name: "Quit after pull failure",
 			provider: &fakeLocalProvider{
 				pullErrors: []error{errors.New("download failed")},
 			},
-			configured:    "llama3.1",
-			input:         "p\nq\n",
-			expectError:   true,
-			expectOutput:  "Failed to pull model \"llama3.1\": download failed",
-			expectPulls:   1,
-			expectMessage: "pull quit",
+			configured:   "llama3.1",
+			input:        "p\nq\n",
+			expectError:  true,
+			expectOutput: "Failed to pull model \"llama3.1\": download failed",
+			expectPulls:  1,
 		},
 		{
-			name:          "Reports Ollama unavailable",
-			provider:      &fakeLocalProvider{listErr: errors.New("connection refused")},
-			configured:    "llama3.1",
-			expectError:   true,
-			expectOutput:  "Unable to connect to Ollama.",
-			expectMessage: "connection error",
+			name:         "Reports Ollama unavailable",
+			provider:     &fakeLocalProvider{listErr: errors.New("connection refused")},
+			configured:   "llama3.1",
+			expectError:  true,
+			expectOutput: "Unable to connect to Ollama.",
+		},
+		{
+			name:        "Cancels when input ends",
+			provider:    &fakeLocalProvider{},
+			configured:  "llama3.1",
+			input:       "",
+			expectError: true,
 		},
 		{
 			name:           "Skips discovery for cloud provider",
@@ -211,7 +216,11 @@ func TestSelectModel(t *testing.T) {
 			}
 
 			if !testCase.expectError && got != testCase.expected {
-				t.Fatalf("expected model %q, got %q", testCase.expected, got)
+				t.Fatalf(
+					"expected model %q, got %q",
+					testCase.expected,
+					got,
+				)
 			}
 
 			if !testCase.expectError && source != testCase.expectedSource {
@@ -231,13 +240,24 @@ func TestSelectModel(t *testing.T) {
 				)
 			}
 
-			if localProvider, ok := testCase.provider.(*fakeLocalProvider); ok &&
-				len(localProvider.pullCalls) != testCase.expectPulls {
-				t.Fatalf(
-					"expected %d pull calls, got %d",
-					testCase.expectPulls,
-					len(localProvider.pullCalls),
-				)
+			if localProvider, ok := testCase.provider.(*fakeLocalProvider); ok {
+				if len(localProvider.pullCalls) != testCase.expectPulls {
+					t.Fatalf(
+						"expected %d pull calls, got %d",
+						testCase.expectPulls,
+						len(localProvider.pullCalls),
+					)
+				}
+
+				for _, model := range localProvider.pullCalls {
+					if model != testCase.configured {
+						t.Fatalf(
+							"expected pull call for %q, got %q",
+							testCase.configured,
+							model,
+						)
+					}
+				}
 			}
 		})
 	}

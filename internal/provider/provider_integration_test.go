@@ -27,11 +27,11 @@ func TestOllamaProvider_Integration(t *testing.T) {
 	response, err := provider.Chat(request)
 
 	if err != nil {
-		t.Fatalf("❌ Ollama integration test failed: %v", err)
+		t.Fatalf(" Ollama integration test failed: %v", err)
 	}
 
 	if response.Content == "" {
-		t.Fatalf("❌ Ollama returned an empty response")
+		t.Fatalf(" Ollama returned an empty response")
 	}
 
 	t.Logf("✅ Ollama response: %s", response.Content)
