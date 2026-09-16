@@ -1,8 +1,14 @@
 package provider
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestOllamaProvider_Integration(t *testing.T) {
+	if os.Getenv("OLLAMA_INTEGRATION") != "1" {
+		t.Skip("set OLLAMA_INTEGRATION=1 to run the Ollama integration test")
+	}
 
 	provider := OllamaProvider{
 		BaseURL: "http://localhost:11434",
