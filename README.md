@@ -488,10 +488,12 @@ The tools operate on the local machine and should be used with appropriate care.
 The CLI entry point is:
 
 ```bash
-go run ./cmd/agent
+go run ./cmd
 ```
 
 The CLI loads the configured provider and model and provides an interactive terminal interface.
+
+Before starting the CLI, make sure Ollama is running and the configured model is available. If the configured model is not installed, the CLI presents options to pull it, select another installed model, or quit. Empty input is ignored.
 
 Current commands include:
 
@@ -507,7 +509,7 @@ Any other input is treated as a chat request.
 The active Ollama model can be overridden for the current run with:
 
 ```bash
-OLLAMA_MODEL="your-model-name" go run ./cmd/agent
+OLLAMA_MODEL="your-model-name" go run ./cmd
 ```
 
 Credential management is handled separately from provider configuration.
@@ -575,6 +577,14 @@ Run static checks:
 go vet ./...
 ```
 
+## Continuous Integration
+
+GitHub Actions runs the Go CI workflow for pushes to `main` and `feature/**`, and for pull requests targeting `main`. The workflow:
+
+* Verifies that all Go files are formatted with `gofmt`.
+* Runs `go test ./...`.
+* Runs `go vet ./...`.
+
 Format the project with:
 
 ```bash
@@ -619,10 +629,16 @@ The orchestrator integration test is opt-in and requires a running Ollama servic
 ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./internal/orchestrator -v
 ```
 
+The provider integration test is also opt-in:
+
+```bash
+OLLAMA_INTEGRATION=1 go test -run TestOllamaProvider_Integration ./internal/provider -v
+```
+
 The provider package also contains a separate local Ollama integration test:
 
 ```bash
-go test -run TestOllamaProvider_Integration ./internal/provider -v
+OLLAMA_INTEGRATION=1 go test -run TestOllamaProvider_Integration ./internal/provider -v
 ```
 
 ## End-to-End Example
@@ -630,7 +646,7 @@ go test -run TestOllamaProvider_Integration ./internal/provider -v
 With Ollama running and a model available:
 
 ```bash
-go run ./cmd/agent
+go run ./cmd
 ```
 
 Then enter:
