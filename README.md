@@ -1,6 +1,6 @@
 # Agent Harness
 
-Agent Harness is a Go-based runtime for building and running tool-using AI agents. It provides provider abstraction, conversation history, native tool execution, MCP integration, credential management, and an interactive CLI.
+Agent Harness is a Go-based runtime for building and running tool-using AI agents. It provides provider abstraction, conversation history, native tool execution, MCP integration, credential management, session storage, and an interactive CLI.
 
 The project is designed with a local-first architecture while keeping the core runtime provider-neutral and extensible.
 
@@ -18,6 +18,9 @@ The project currently supports:
 * MCP tools integrated with the existing Tool Registry
 * Credential storage
 * In-memory conversation history
+* Session abstraction
+* In-memory session storage
+* File-based persistent session storage
 * Agent and orchestrator execution
 * Interactive CLI
 * Unit and integration testing
@@ -25,6 +28,8 @@ The project currently supports:
 Ollama remains the current fully integrated provider. Additional cloud providers can be added through the provider abstraction without changing the Agent or Orchestrator layers.
 
 MCP tools can be discovered from connected MCP servers, adapted to the existing `tools.Tool` interface, and registered with the Tool Registry alongside native tools. MCP support is currently exposed through the library and tests; the interactive CLI does not configure MCP servers.
+
+Sessions provide a storage boundary for conversation state. The current implementation includes an in-memory `SessionStore` and a file-based `FileSessionStore` that persists sessions as JSON files on disk.
 
 ## Features
 
@@ -47,6 +52,9 @@ MCP tools can be discovered from connected MCP servers, adapted to the existing 
 * MCP tool registration with the Tool Registry
 * MCP tool execution
 * Local credential storage
+* Session abstraction
+* In-memory session storage
+* File-based persistent session storage
 * Interactive CLI
 * Unit tests
 * Ollama integration tests
@@ -81,35 +89,41 @@ MCP tools can be discovered from connected MCP servers, adapted to the existing 
                              v
 
                        Tool Registry
-
                        /           \
-
                       /             \
-
                      v               v
 
              Native Tools        MCP Adapter
-
              /    |    \             |
-
             v     v     v            v
 
       Calculator Shell Filesystem  MCP Tool
-
                                       |
-
                                       v
 
                                  MCP Client
-
                                       |
-
                                       v
 
                                  MCP Server
 ```
 
 The MCP adapter allows discovered MCP tools to enter the same tool boundary as native tools.
+
+Sessions provide a separate storage boundary for session state:
+
+```text
+                    Session
+                       |
+                       v
+                Session Store
+                 /          \
+                v            v
+        In-Memory Store   File Store
+                             |
+                             v
+                          JSON File
+```
 
 The layers have distinct responsibilities:
 
@@ -122,10 +136,13 @@ The layers have distinct responsibilities:
 * **MCP Client** creates MCP client sessions, connects to MCP servers, and discovers available MCP tools.
 * **MCP Tool Wrapper** represents an MCP tool locally and forwards execution requests to the connected MCP server.
 * **Tool Adapter** converts an MCP tool into the existing `tools.Tool` interface so it can be registered and executed through the Tool Registry.
+* **Session Store** provides the storage abstraction for session state.
+* **In-Memory Session Store** stores sessions in process memory.
+* **File Session Store** stores sessions as JSON files on disk.
 * **Concrete Tools** perform local operations.
 * **MCP Servers** provide external tools through the Model Context Protocol.
 
-The LLM/provider produces the tool-call decision. The Agent does not plan or decide what should happen. The Orchestrator coordinates execution, the Registry manages the available tools, the MCP layer manages MCP communication, and the selected tool performs the operation.
+The LLM/provider produces the tool-call decision. The Agent does not plan or decide what should happen. The Orchestrator coordinates execution, the Registry manages the available tools, the MCP layer manages MCP communication, the Session Store manages session persistence, and the selected tool performs the operation.
 
 ## Runtime Flow
 
@@ -156,7 +173,7 @@ For MCP tools, the registration flow is:
 10. The adapter forwards execution through the MCP client session to the MCP server.
 11. The MCP result is returned to the Agent and added to the conversation.
 
-Conversation history is retained only in memory for the lifetime of the Agent instance.
+Conversation history is retained in memory for the lifetime of the Agent instance. Session storage provides a separate persistence mechanism for session state and can be used to save and restore session data.
 
 ## Project Structure
 
@@ -206,7 +223,9 @@ agent-harness/
 │   ├── session/
 │   │   ├── session.go
 │   │   ├── session_test.go
-│   │   └── store.go
+│   │   ├── store.go
+│   │   ├── file_store.go
+│   │   └── file_store_test.go
 │   └── tools/
 │       ├── calculator.go
 │       ├── calculator_test.go
@@ -262,7 +281,7 @@ Credentials are stored outside the repository under:
 ~/.agent-harness/credentials.json
 ```
 
-The credential store provides three operations:
+The credential store provides three operations.
 
 #### `Set`
 
@@ -282,7 +301,7 @@ Retrieves the stored credential for a provider.
 key, err := store.Get("openai")
 ```
 
-If the provider has a stored credential, the credential value is returned. If no credential exists, an error is returned.
+If a provider has a stored credential, the credential value is returned. If no credential exists, an error is returned.
 
 #### `Delete`
 
@@ -295,6 +314,104 @@ err := store.Delete("openai")
 If the credential exists, it is removed from the credential store. If no credential exists for the provider, an error is returned.
 
 The credential layer is intentionally separated behind an interface so the underlying storage can be replaced later without changing the rest of the runtime.
+
+### Sessions
+
+The `internal/session` package provides session state and session storage abstractions.
+
+A session currently contains a session identifier:
+
+```go
+type Session struct {
+    ID string
+}
+```
+
+Sessions are created through:
+
+```go
+session := session.NewSession("my-session")
+```
+
+The storage abstraction is:
+
+```go
+type Store interface {
+    Get(id string) (*Session, error)
+    Set(session *Session) error
+    Delete(id string) error
+}
+```
+
+The current implementation provides two stores:
+
+* `SessionStore` for in-memory session storage
+* `FileSessionStore` for persistent file-based session storage
+
+#### In-Memory Session Store
+
+The in-memory store keeps sessions in a Go map:
+
+```text
+SessionStore
+     |
+     v
+map[string]*Session
+```
+
+It provides:
+
+* `Set` — stores a session in memory
+* `Get` — retrieves a session by ID
+* `Delete` — removes a session by ID
+
+The in-memory store is useful when session state only needs to exist during the current process lifetime.
+
+#### File Session Store
+
+The `FileSessionStore` persists sessions to JSON files on disk.
+
+It is created with:
+
+```go
+store := NewFileSessionStore("~/.agent-harness/sessions")
+```
+
+The file store provides the same operations:
+
+* `Set`
+* `Get`
+* `Delete`
+
+Sessions are stored using their ID as the filename:
+
+```text
+<session-id>.json
+```
+
+For example:
+
+```text
+test-session.json
+```
+
+The `Set` operation:
+
+1. Validates the session.
+2. Ensures the session directory exists.
+3. Marshals the session into JSON.
+4. Writes the JSON to the session file.
+
+The `Get` operation:
+
+1. Locates the session JSON file.
+2. Reads the file.
+3. Unmarshals the JSON into a `Session`.
+4. Returns the session.
+
+The `Delete` operation removes the session JSON file.
+
+The file store creates its directory with restrictive permissions and writes session files with owner-only read/write permissions.
 
 ### Provider
 
@@ -510,21 +627,13 @@ This provides a unified tool boundary:
           v                       v
 
      Native Tools            MCP Adapters
-
           |                       |
-
           |                       v
-
           |                  MCP Tools
-
           |                       |
-
           |                  MCP Server
-
           |
-
           v
-
         Agent
 ```
 
@@ -577,8 +686,11 @@ Current commands include:
 
 ```text
 help
+
 model
+
 clear
+
 exit
 ```
 
@@ -593,6 +705,8 @@ OLLAMA_MODEL="your-model-name" go run ./cmd
 ```
 
 The CLI does not provide credential-management commands. Credential storage is handled separately from provider configuration.
+
+The CLI does not currently provide session management commands.
 
 ## Ollama Setup
 
@@ -645,6 +759,34 @@ The credentials layer currently provides:
 
 Provider configuration does not contain API keys or other credentials.
 
+## Sessions
+
+Session files can be stored in a directory such as:
+
+```text
+~/.agent-harness/sessions/
+```
+
+Each session is stored as a separate JSON file:
+
+```text
+~/.agent-harness/sessions/<session-id>.json
+```
+
+The current session store API provides:
+
+```go
+type Store interface {
+    Get(id string) (*Session, error)
+    Set(session *Session) error
+    Delete(id string) error
+}
+```
+
+The file-based implementation provides persistent storage while keeping the storage mechanism behind the same interface as the in-memory implementation.
+
+The current CLI does not expose session commands. Session management is currently available through the session package and its tests.
+
 ## Testing
 
 Run all tests from the repository root:
@@ -694,6 +836,13 @@ The project contains unit and integration-style tests covering:
 * MCP tool registration with the Tool Registry
 * Agent execution of MCP tools
 * Orchestrator execution of MCP tools
+* Session creation
+* In-memory Session Store creation
+* In-memory Session Store Set/Get/Delete operations
+* File Session Store creation
+* File Session Store Set operations
+* File Session Store Get operations
+* File Session Store Delete operations
 
 The MCP tests use the SDK's in-memory transport, allowing client/server communication to be tested without requiring an external MCP server.
 
@@ -751,41 +900,23 @@ For MCP tools, the same Tool Registry boundary can be used:
 
 ```text
 Provider
-
    |
-
    v
-
 Orchestrator
-
    |
-
    v
-
 Agent
-
    |
-
    v
-
 Tool Registry
-
    |
-
    v
-
 ToolAdapter
-
    |
-
    v
-
 MCP Tool
-
    |
-
    v
-
 MCP Server
 ```
 
@@ -795,7 +926,7 @@ The MCP server performs the requested operation and returns the result through t
 
 ### Separation of Concerns
 
-Provider communication, coordination, tool access, registry management, credential storage, MCP communication, and concrete operations remain separate.
+Provider communication, coordination, tool access, registry management, credential storage, MCP communication, session storage, and concrete operations remain separate.
 
 ### Provider-Neutral Contracts
 
@@ -819,7 +950,13 @@ Native tools implement the interface directly, while MCP tools use `ToolAdapter`
 
 ### In-Memory State
 
-Conversation history belongs to the Agent and is not persisted between process runs.
+The Agent currently keeps active conversation history in memory.
+
+Session storage provides a separate mechanism for persisting session state between process runs.
+
+### Persistent Session Storage
+
+The file-based session store persists session objects as JSON files while keeping storage behind the `Store` interface.
 
 ### Local-First Operation
 
@@ -827,7 +964,7 @@ The current fully integrated provider is Ollama, allowing the runtime to operate
 
 ### Extensible Architecture
 
-Provider implementations, native tools, MCP servers, and credential storage can be extended without requiring the core Agent and Orchestrator architecture to be rewritten.
+Provider implementations, native tools, MCP servers, session stores, and credential storage can be extended without requiring the core Agent and Orchestrator architecture to be rewritten.
 
 ## Implementation Status
 
@@ -866,6 +1003,9 @@ Provider implementations, native tools, MCP servers, and credential storage can 
 | Session abstraction                              | Implemented |
 | In-memory Session Store                          | Implemented |
 | Session Store Set/Get/Delete operations          | Implemented |
+| File Session Store                               | Implemented |
+| File Session Store Set/Get/Delete operations     | Implemented |
+| Persistent session file storage                  | Implemented |
 
 ## Roadmap
 
@@ -875,7 +1015,7 @@ The following are planned extensions:
 * Additional LLM provider implementations
 * CLI credential management commands
 * CLI MCP server configuration and registration
-* Persistent sessions and conversation storage
+* CLI session management commands
 * Information-retrieval tools
 * Additional native and MCP tools
 * Improved CLI experience and configuration management
