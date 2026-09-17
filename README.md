@@ -57,30 +57,55 @@ MCP tools can be discovered from connected MCP servers, adapted to the existing 
 
 ```text
                            User
+
                              |
+
                              v
+
                             CLI
+
                              |
+
                              v
+
                        Orchestrator
+
                              |
+
                              v
+
                            Agent
+
                              |
+
                              v
+
                        Tool Registry
+
                        /           \
+
                       /             \
+
                      v               v
+
              Native Tools        MCP Adapter
+
              /    |    \             |
+
             v     v     v            v
+
       Calculator Shell Filesystem  MCP Tool
+
                                       |
+
                                       v
+
                                  MCP Client
+
                                       |
+
                                       v
+
                                  MCP Server
 ```
 
@@ -178,6 +203,10 @@ agent-harness/
 │   │   ├── provider.go
 │   │   ├── provider_integration_test.go
 │   │   └── provider_test.go
+│   ├── session/
+│   │   ├── session.go
+│   │   ├── session_test.go
+│   │   └── store.go
 │   └── tools/
 │       ├── calculator.go
 │       ├── calculator_test.go
@@ -235,9 +264,35 @@ Credentials are stored outside the repository under:
 
 The credential store provides three operations:
 
-* **Set** stores or updates a credential for a provider.
-* **Get** retrieves the stored credential for a provider.
-* **Delete** removes the stored credential for a provider.
+#### `Set`
+
+Stores or updates a credential for a provider.
+
+```go
+err := store.Set("openai", "api-key")
+```
+
+If a credential already exists for the provider, `Set` replaces the existing value.
+
+#### `Get`
+
+Retrieves the stored credential for a provider.
+
+```go
+key, err := store.Get("openai")
+```
+
+If the provider has a stored credential, the credential value is returned. If no credential exists, an error is returned.
+
+#### `Delete`
+
+Removes the stored credential for a provider.
+
+```go
+err := store.Delete("openai")
+```
+
+If the credential exists, it is removed from the credential store. If no credential exists for the provider, an error is returned.
 
 The credential layer is intentionally separated behind an interface so the underlying storage can be replaced later without changing the rest of the runtime.
 
@@ -445,18 +500,31 @@ This provides a unified tool boundary:
 
 ```text
                  Tool Registry
+
                       |
+
           +-----------+-----------+
+
           |                       |
+
           v                       v
+
      Native Tools            MCP Adapters
+
           |                       |
+
           |                       v
+
           |                  MCP Tools
+
           |                       |
+
           |                  MCP Server
+
           |
+
           v
+
         Agent
 ```
 
@@ -572,8 +640,8 @@ The credential store is located at:
 The credentials layer currently provides:
 
 * **Set** — stores or updates a provider credential.
-* **Get** — retrieves a provider credential.
-* **Delete** — removes a provider credential.
+* **Get** — retrieves a stored provider credential.
+* **Delete** — removes a stored provider credential.
 
 Provider configuration does not contain API keys or other credentials.
 
@@ -590,16 +658,6 @@ Run static checks:
 ```bash
 go vet ./...
 ```
-
-## Continuous Integration
-
-GitHub Actions runs the Go CI workflow for pushes to `main` and `feature/**`, and for pull requests targeting `main`. The workflow:
-
-* Checks that all Go files are formatted with `gofmt`.
-* Runs `go test ./...`.
-* Runs `go vet ./...`.
-
-The workflow does not set `OLLAMA_INTEGRATION=1` or `ORCHESTRATOR_INTEGRATION=1`, so Ollama integration tests are intentionally skipped by CI.
 
 Format the project with:
 
@@ -651,6 +709,18 @@ The provider integration test is also opt-in:
 OLLAMA_INTEGRATION=1 go test -run TestOllamaProvider_Integration ./internal/provider -v
 ```
 
+## Continuous Integration
+
+GitHub Actions runs the Go CI workflow for pushes to `main` and `feature/**`, and for pull requests targeting `main`.
+
+The workflow:
+
+* Checks that all Go files are formatted with `gofmt`.
+* Runs `go test ./...`.
+* Runs `go vet ./...`.
+
+The workflow does not set `OLLAMA_INTEGRATION=1` or `ORCHESTRATOR_INTEGRATION=1`, so Ollama integration tests are intentionally skipped by CI.
+
 ## End-to-End Example
 
 With Ollama running and a model available:
@@ -681,23 +751,41 @@ For MCP tools, the same Tool Registry boundary can be used:
 
 ```text
 Provider
+
    |
+
    v
+
 Orchestrator
+
    |
+
    v
+
 Agent
+
    |
+
    v
+
 Tool Registry
+
    |
+
    v
+
 ToolAdapter
+
    |
+
    v
+
 MCP Tool
+
    |
+
    v
+
 MCP Server
 ```
 
@@ -775,6 +863,9 @@ Provider implementations, native tools, MCP servers, and credential storage can 
 | Agent MCP tool execution                         | Implemented |
 | Orchestrator MCP tool execution                  | Implemented |
 | Unit and integration tests                       | Implemented |
+| Session abstraction                              | Implemented |
+| In-memory Session Store                          | Implemented |
+| Session Store Set/Get/Delete operations          | Implemented |
 
 ## Roadmap
 
