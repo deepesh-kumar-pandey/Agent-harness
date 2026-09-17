@@ -8,6 +8,8 @@ type MemoryStore struct {
 	sessions map[string]*Session
 }
 
+var _ Store = (*MemoryStore)(nil)
+
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		sessions: make(map[string]*Session),
