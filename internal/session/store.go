@@ -49,3 +49,13 @@ func (store *SessionStore) Delete(id string) error {
 	delete(store.sessions, id)
 	return nil
 }
+
+func (store *SessionStore) List() []*Session {
+	sessions := make([]*Session, 0, len(store.sessions))
+
+	for _, session := range store.sessions {
+		sessions = append(sessions, session)
+	}
+
+	return sessions
+}
