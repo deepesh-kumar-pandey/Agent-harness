@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	providerpkg "agent-harness/internal/provider"
+	sessionpkg "agent-harness/internal/session"
 )
 
 type fakeLocalProvider struct {
@@ -51,6 +52,7 @@ func (fakeCloudProvider) Chat(
 	return providerpkg.ChatResponse{}, nil
 }
 
+// Test for resolving the model using the environment variable.
 func TestResolveModelUsesEnvOverride(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "custom-model")
 
@@ -67,6 +69,7 @@ func TestResolveModelUsesEnvOverride(t *testing.T) {
 	}
 }
 
+// Test for resolving the model using the configuration.
 func TestResolveModelUsesConfigModel(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "")
 
@@ -83,6 +86,7 @@ func TestResolveModelUsesConfigModel(t *testing.T) {
 	}
 }
 
+// Test for resolving the default model.
 func TestResolveModelDefaultsToInstalledModel(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "")
 
@@ -99,6 +103,7 @@ func TestResolveModelDefaultsToInstalledModel(t *testing.T) {
 	}
 }
 
+// Test for selecting a local model.
 func TestSelectModel(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -263,6 +268,7 @@ func TestSelectModel(t *testing.T) {
 	}
 }
 
+// Test for handling CLI commands.
 func TestHandleCommand(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -278,7 +284,7 @@ func TestHandleCommand(t *testing.T) {
 			model:          "test-model",
 			modelSource:    "test-source",
 			expectedResult: CommandHandled,
-			expectedOutput: "Available commands: help, exit, model, clear",
+			expectedOutput: "Available commands: help, exit, model, session, clear",
 		},
 		{
 			name:           "Model command",
@@ -287,6 +293,14 @@ func TestHandleCommand(t *testing.T) {
 			modelSource:    "test-source",
 			expectedResult: CommandHandled,
 			expectedOutput: "Current model : test-model\nSource: test-source",
+		},
+		{
+			name:           "Session command",
+			input:          "session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Current session: test-session",
 		},
 		{
 			name:           "Clear command",
@@ -316,10 +330,13 @@ func TestHandleCommand(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			var output strings.Builder
 
+			currentSession := sessionpkg.NewSession("test-session")
+
 			got := handleCommand(
 				testCase.input,
 				testCase.model,
 				testCase.modelSource,
+				currentSession,
 				&output,
 			)
 
@@ -343,6 +360,7 @@ func TestHandleCommand(t *testing.T) {
 	}
 }
 
+// Test for clearing the terminal.
 func TestClearTerminal(t *testing.T) {
 	var output strings.Builder
 
@@ -359,6 +377,7 @@ func TestClearTerminal(t *testing.T) {
 	}
 }
 
+// Test for checking whether a model exists.
 func TestContainsModel(t *testing.T) {
 	testCases := []struct {
 		name     string
