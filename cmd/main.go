@@ -12,6 +12,7 @@ import (
 	agentpkg "agent-harness/internal/agent"
 	orchestratorpkg "agent-harness/internal/orchestrator"
 	providerpkg "agent-harness/internal/provider"
+	sessionpkg "agent-harness/internal/session"
 	toolspkg "agent-harness/internal/tools"
 )
 
@@ -176,12 +177,6 @@ func containsModel(models []string, target string) bool {
 	return false
 }
 
-// clearTerminal clears the terminal screen.
-//
-// output is the destination where the terminal escape sequence is written.
-//
-// \033[H moves the cursor to the top-left of the terminal.
-// \033[2J clears the terminal screen.
 func clearTerminal(output io.Writer) {
 	fmt.Fprint(output, "\033[H\033[2J")
 }
@@ -190,11 +185,15 @@ func handleCommand(
 	input string,
 	model string,
 	modelSource string,
+	currentSession *sessionpkg.Session,
 	output io.Writer,
 ) CommandResult {
 	switch input {
 	case "help":
-		fmt.Fprintln(output, "Available commands: help, exit, model, clear")
+		fmt.Fprintln(
+			output,
+			"Available commands: help, exit, model, session, clear",
+		)
 		return CommandHandled
 
 	case "model":
@@ -203,6 +202,14 @@ func handleCommand(
 			"Current model : %s\nSource: %s\n",
 			model,
 			modelSource,
+		)
+		return CommandHandled
+
+	case "session":
+		fmt.Fprintf(
+			output,
+			"Current session: %s\n",
+			currentSession.ID,
 		)
 		return CommandHandled
 
@@ -251,10 +258,17 @@ func main() {
 		return
 	}
 
+	currentSession := sessionpkg.NewSession("default")
+
 	fmt.Printf(
 		"Agent Harness starting... using model: %s (source: %s)\n",
 		model,
 		modelSource,
+	)
+
+	fmt.Printf(
+		"Current session: %s\n",
+		currentSession.ID,
 	)
 
 	orchestratorClient := orchestratorpkg.NewOrchestrator(
@@ -281,6 +295,7 @@ func main() {
 			input,
 			model,
 			modelSource,
+			currentSession,
 			os.Stdout,
 		)
 
