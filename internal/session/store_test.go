@@ -197,3 +197,61 @@ func TestSessionStoreDelete(t *testing.T) {
 		})
 	}
 }
+
+// Test for List function
+func TestSessionStoreList(t *testing.T) {
+	testCases := []struct {
+		name          string
+		sessionIDs    []string
+		expectedCount int
+	}{
+		{
+			name:          "lists all sessions",
+			sessionIDs:    []string{"session-1", "session-2", "session-3"},
+			expectedCount: 3,
+		},
+		{
+			name:          "returns empty list when no sessions exist",
+			sessionIDs:    []string{},
+			expectedCount: 0,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fmt.Printf("Running test case: %s\n", testCase.name)
+
+			store := NewSessionStore()
+
+			for _, id := range testCase.sessionIDs {
+				err := store.Set(NewSession(id))
+
+				if err != nil {
+					t.Fatalf("expected no error while setting session, got %v", err)
+				}
+			}
+
+			sessions := store.List()
+
+			if len(sessions) != testCase.expectedCount {
+				t.Fatalf(
+					"expected %d sessions, got %d",
+					testCase.expectedCount,
+					len(sessions),
+				)
+			}
+
+			for _, session := range sessions {
+				if session == nil {
+					t.Fatal("expected session, got nil")
+				}
+
+				if _, exists := store.sessions[session.ID]; !exists {
+					t.Fatalf("expected session %s to exist in store", session.ID)
+				}
+			}
+
+			fmt.Printf("List test completed successfully: %s\n", testCase.name)
+		})
+	}
+}
