@@ -285,6 +285,34 @@ func handleCommand(
 
 			return CommandHandled
 
+		case "delete":
+			if len(parts) != 3 {
+				fmt.Fprintln(output, "Usage: session delete <id>")
+				return CommandHandled
+			}
+
+			if parts[2] == (*currentSession).ID {
+				fmt.Fprintln(output, "Cannot delete current session.")
+				return CommandHandled
+			}
+
+			if err := sessionStore.Delete(parts[2]); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to delete session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			fmt.Fprintf(
+				output,
+				"Deleted session: %s\n",
+				parts[2],
+			)
+
+			return CommandHandled
+
 		default:
 			fmt.Fprintln(output, "Unknown session command.")
 			return CommandHandled
