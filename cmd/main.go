@@ -186,7 +186,8 @@ func handleCommand(
 	model string,
 	modelSource string,
 	currentSession **sessionpkg.Session,
-	sessionStore *sessionpkg.SessionStore,
+	sessionStore sessionpkg.Store,
+	agentClient *agentpkg.Agent,
 	output io.Writer,
 ) CommandResult {
 	parts := strings.Fields(input)
@@ -234,6 +235,15 @@ func handleCommand(
 				fmt.Fprintf(
 					output,
 					"Failed to load session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			if err := agentClient.SetSession(session); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to activate session: %v\n",
 					err,
 				)
 				return CommandHandled
@@ -363,11 +373,19 @@ func main() {
 		return
 	}
 
-	sessionStore := sessionpkg.NewSessionStore()
+	sessionStore := sessionpkg.NewFileSessionStore(".sessions")
 
-	currentSession := sessionpkg.NewSession("default")
+	currentSession, err := sessionStore.Get("default")
+	if err != nil {
+		currentSession = sessionpkg.NewSession("default")
 
-	if err := sessionStore.Set(currentSession); err != nil {
+		if err := sessionStore.Set(currentSession); err != nil {
+			fmt.Println("Session error:", err)
+			return
+		}
+	}
+
+	if err := agentClient.SetSession(currentSession); err != nil {
 		fmt.Println("Session error:", err)
 		return
 	}
@@ -409,6 +427,7 @@ func main() {
 			modelSource,
 			&currentSession,
 			sessionStore,
+			agentClient,
 			os.Stdout,
 		)
 
