@@ -186,9 +186,16 @@ func handleCommand(
 	model string,
 	modelSource string,
 	currentSession *sessionpkg.Session,
+	sessionStore *sessionpkg.SessionStore,
 	output io.Writer,
 ) CommandResult {
-	switch input {
+	parts := strings.Fields(input)
+
+	if len(parts) == 0 {
+		return CommandNotHandled
+	}
+
+	switch parts[0] {
 	case "help":
 		fmt.Fprintln(
 			output,
@@ -206,12 +213,56 @@ func handleCommand(
 		return CommandHandled
 
 	case "session":
-		fmt.Fprintf(
-			output,
-			"Current session: %s\n",
-			currentSession.ID,
-		)
-		return CommandHandled
+		if len(parts) == 1 {
+			fmt.Fprintf(
+				output,
+				"Current session: %s\n",
+				currentSession.ID,
+			)
+			return CommandHandled
+		}
+
+		switch parts[1] {
+		case "list":
+			sessions := sessionStore.List()
+
+			fmt.Fprintln(output, "Sessions:")
+
+			for _, session := range sessions {
+				fmt.Fprintf(output, "- %s\n", session.ID)
+			}
+
+			return CommandHandled
+
+		case "create":
+			if len(parts) != 3 {
+				fmt.Fprintln(output, "Usage: session create <id>")
+				return CommandHandled
+			}
+
+			session := sessionpkg.NewSession(parts[2])
+
+			if err := sessionStore.Set(session); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to create session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			fmt.Fprintf(
+				output,
+				"Created session: %s\n",
+				session.ID,
+			)
+
+			return CommandHandled
+
+		default:
+			fmt.Fprintln(output, "Unknown session command.")
+			return CommandHandled
+		}
 
 	case "clear":
 		clearTerminal(output)
@@ -258,7 +309,14 @@ func main() {
 		return
 	}
 
+	sessionStore := sessionpkg.NewSessionStore()
+
 	currentSession := sessionpkg.NewSession("default")
+
+	if err := sessionStore.Set(currentSession); err != nil {
+		fmt.Println("Session error:", err)
+		return
+	}
 
 	fmt.Printf(
 		"Agent Harness starting... using model: %s (source: %s)\n",
@@ -296,6 +354,7 @@ func main() {
 			model,
 			modelSource,
 			currentSession,
+			sessionStore,
 			os.Stdout,
 		)
 
