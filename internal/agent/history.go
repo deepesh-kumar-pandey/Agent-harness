@@ -3,20 +3,20 @@ package tools
 import (
 	"fmt"
 
-	"agent-harness/internal/provider"
+	providerpkg "agent-harness/internal/provider"
 )
 
 type Conversation struct {
-	Messages []provider.Message
+	Messages []providerpkg.Message
 }
 
 func NewConversation() *Conversation {
 	return &Conversation{
-		Messages: make([]provider.Message, 0),
+		Messages: make([]providerpkg.Message, 0),
 	}
 }
 
-func (c *Conversation) AddMessage(message provider.Message) error {
+func (c *Conversation) AddMessage(message providerpkg.Message) error {
 	if message.Role == "" {
 		return fmt.Errorf("message role is required")
 	}
@@ -25,6 +25,6 @@ func (c *Conversation) AddMessage(message provider.Message) error {
 	return nil
 }
 
-func (c *Conversation) GetMessages() []provider.Message {
+func (c *Conversation) GetMessages() []providerpkg.Message {
 	return c.Messages
 }
