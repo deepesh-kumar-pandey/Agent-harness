@@ -151,3 +151,34 @@ func TestMemoryStoreDelete(t *testing.T) {
 		})
 	}
 }
+
+// Test for List function
+func TestMemoryStoreList(t *testing.T) {
+	store := NewMemoryStore()
+
+	session1 := NewSession("session-1")
+	session2 := NewSession("session-2")
+
+	store.sessions[session1.ID] = session1
+	store.sessions[session2.ID] = session2
+
+	sessions := store.List()
+
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+
+	found := make(map[string]bool)
+
+	for _, session := range sessions {
+		found[session.ID] = true
+	}
+
+	if !found["session-1"] {
+		t.Fatal("expected session-1 in list")
+	}
+
+	if !found["session-2"] {
+		t.Fatal("expected session-2 in list")
+	}
+}
