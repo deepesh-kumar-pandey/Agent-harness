@@ -351,6 +351,38 @@ func TestHandleCommand(t *testing.T) {
 			expectedOutput: "Usage: session create <id>",
 		},
 		{
+			name:           "Session delete command",
+			input:          "session delete delete-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Deleted session: delete-session",
+		},
+		{
+			name:           "Session delete command missing ID",
+			input:          "session delete",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: session delete <id>",
+		},
+		{
+			name:           "Session delete current session",
+			input:          "session delete test-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Cannot delete current session.",
+		},
+		{
+			name:           "Session delete command session not found",
+			input:          "session delete missing-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Failed to delete session: session not found: missing-session",
+		},
+		{
 			name:           "Clear command",
 			input:          "clear",
 			model:          "test-model",
@@ -403,6 +435,19 @@ func TestHandleCommand(t *testing.T) {
 				}
 			}
 
+			if testCase.input == "session delete delete-session" {
+				err := sessionStore.Set(
+					sessionpkg.NewSession("delete-session"),
+				)
+
+				if err != nil {
+					t.Fatalf(
+						"expected no error while setting delete session, got %v",
+						err,
+					)
+				}
+			}
+
 			got := handleCommand(
 				testCase.input,
 				testCase.model,
@@ -445,6 +490,16 @@ func TestHandleCommand(t *testing.T) {
 					t.Fatalf(
 						"expected current session to be loaded-session, got %q",
 						currentSession.ID,
+					)
+				}
+			}
+
+			if testCase.input == "session delete delete-session" {
+				_, err := sessionStore.Get("delete-session")
+
+				if err == nil {
+					t.Fatalf(
+						"expected delete-session to be removed from store",
 					)
 				}
 			}
