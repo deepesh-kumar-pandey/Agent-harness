@@ -227,7 +227,10 @@ func TestSessionStoreList(t *testing.T) {
 				err := store.Set(NewSession(id))
 
 				if err != nil {
-					t.Fatalf("expected no error while setting session, got %v", err)
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
 				}
 			}
 
@@ -247,11 +250,17 @@ func TestSessionStoreList(t *testing.T) {
 				}
 
 				if _, exists := store.sessions[session.ID]; !exists {
-					t.Fatalf("expected session %s to exist in store", session.ID)
+					t.Fatalf(
+						"expected session %s to exist in store",
+						session.ID,
+					)
 				}
 			}
 
-			fmt.Printf("List test completed successfully: %s\n", testCase.name)
+			fmt.Printf(
+				"List test completed successfully: %s\n",
+				testCase.name,
+			)
 		})
 	}
 }
