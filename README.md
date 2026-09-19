@@ -4,141 +4,166 @@ Agent Harness is a Go-based runtime for building and running tool-using AI agent
 
 The project is designed with a local-first architecture while keeping the core runtime provider-neutral and extensible.
 
+---
+
 ## Current Status
 
 The project currently supports:
 
-* Provider abstraction with Ollama integration
-* Conversation history and agent orchestration
-* Native tool calling
-* Built-in calculator, shell, and filesystem tools
-* Tool registry with dynamic registration and removal
-* MCP client integration
-* MCP tool discovery and adaptation into the native tool system
-* Credential storage and retrieval
-* In-memory and file-based session storage
-* Interactive CLI
-* CLI model inspection and session display
-* Local Ollama model management
-* Unit and integration tests
-* Go formatting, testing, and static analysis
-* GitHub Actions CI
+- Provider abstraction with Ollama integration
+- Conversation history and agent orchestration
+- Native tool calling
+- Built-in calculator, shell, and filesystem tools
+- Tool registry with dynamic registration and removal
+- MCP client integration
+- MCP tool discovery and adaptation into the native tool system
+- Credential storage and retrieval
+- In-memory and file-based session storage
+- Session-aware Agent runtime
+- CLI session creation, listing, loading, and deletion
+- Interactive CLI
+- CLI model inspection and session display
+- Local Ollama model management
+- Unit and integration tests
+- Go formatting, testing, and static analysis
+- GitHub Actions CI
 
-The core runtime is functional, with the current work focused on expanding session management, CLI functionality, MCP usage, and runtime capabilities.
+The core runtime is functional. Current development is focused on strengthening session management, persistent conversation history, MCP capabilities, and runtime extensibility.
 
 ---
 
-## Features
+# Features
 
-### Provider Abstraction
+## Provider Abstraction
 
-The runtime uses provider-neutral interfaces so the agent does not depend directly on a specific model provider.
+The runtime uses provider-neutral interfaces so the Agent does not depend directly on a specific model provider.
 
 Currently integrated:
 
-* Ollama
+- Ollama
 
 The provider layer supports:
 
-* Chat requests
-* Chat responses
-* Conversation messages
-* Tool definitions
-* Tool calls
-* Model listing
-* Model availability checks
-* Model pulling
+- Chat requests
+- Chat responses
+- Conversation messages
+- Tool definitions
+- Tool calls
+- Model listing
+- Model availability checks
+- Model pulling
+
+Provider-specific behavior is kept behind the Provider abstraction.
 
 ---
 
-### Agent Runtime
+## Agent Runtime
 
-The agent maintains conversation history and coordinates model interaction with tool execution.
+The Agent coordinates conversation history, provider interaction, and tool execution.
 
 The runtime supports:
 
-* User messages
-* Assistant responses
-* Tool calls
-* Tool results
-* Multiple tool calls
-* Configurable maximum tool-call iterations
-* Provider-neutral execution
+- User messages
+- Assistant responses
+- Tool calls
+- Tool results
+- Multiple tool calls
+- Configurable maximum tool-call iterations
+- Provider-neutral execution
+- Session-aware conversation history
+
+The Agent can operate with its internal conversation history or with an explicitly assigned Session.
 
 ---
 
-### Tool Registry
+## Tool Registry
 
-The tool registry provides a central system for managing executable tools.
+The Tool Registry provides a central system for managing executable tools.
 
 Built-in tools currently include:
 
-* Calculator
-* Shell
-* Filesystem
+- Calculator
+- Shell
+- Filesystem
 
 The registry supports:
 
-* Registering tools
-* Looking up tools
-* Checking whether a tool exists
-* Listing tools
-* Removing tools
-* Generating tool schemas
+- Registering tools
+- Looking up tools
+- Checking whether a tool exists
+- Listing tools
+- Removing tools
+- Generating tool schemas
+
+The registry provides the common execution layer used by both native and adapted MCP tools.
 
 ---
 
-### MCP Integration
+## MCP Integration
 
 The project includes support for the Model Context Protocol (MCP).
 
 The MCP implementation currently provides:
 
-* MCP client creation
-* MCP server connections
-* MCP tool discovery
-* MCP tool metadata
-* MCP tool execution
-* Conversion of MCP tools into native Agent Harness tools
+- MCP client creation
+- MCP server connections
+- MCP session management
+- MCP tool discovery
+- MCP tool metadata
+- MCP tool execution
+- Conversion of MCP tools into native Agent Harness tools
+- Tool adapter integration with the native Tool interface
 
-MCP tools can therefore participate in the same tool execution flow as built-in tools.
+MCP tools can participate in the same tool execution flow as built-in tools.
 
 ---
 
-### Credential Management
+## Credential Management
 
 The project includes a credential storage abstraction for managing provider or service credentials.
 
 Credential functionality provides:
 
-* Credential storage
-* Credential retrieval
-* Credential deletion
-* A storage abstraction that can be extended later
+- Credential storage
+- Credential retrieval
+- Credential deletion
+- A storage abstraction that can be extended later
 
-Credentials are kept separate from provider logic.
+Credentials are kept separate from provider logic so credential backends can evolve independently.
 
 ---
 
-### Session Storage
+## Session Management
 
 The project includes a session abstraction and session storage layer.
 
 Current session functionality includes:
 
-* Session creation
-* Session IDs
-* In-memory session storage
-* File-based session storage
-* Set
-* Get
-* Delete
+- Session creation
+- Session IDs
+- Session message storage
+- In-memory session storage
+- File-based session storage
+- Set
+- Get
+- Delete
+- Agent session assignment
+- Session-aware Agent message handling
 
-The current `Session` object contains the session ID. Conversation history is still maintained by the Agent runtime and is not automatically persisted or restored by the CLI yet.
+A Session currently contains:
+
+- Session ID
+- Conversation messages
+
+The Agent can be connected to a Session using the session-aware runtime.
+
+The current file-based store can serialize and restore the Session object, including its stored messages.
+
+Automatic persistence after every Agent interaction and automatic session restoration when the application starts are future improvements.
 
 ---
 
-## Architecture
+# Architecture
 
 ```text
                          ┌──────────────────────┐
@@ -150,6 +175,7 @@ The current `Session` object contains the session ID. Conversation history is st
                          │        Agent         │
                          │                      │
                          │ Conversation History │
+                         │ Session Integration  │
                          │ Tool Execution       │
                          └──────────┬───────────┘
                                     │
@@ -175,13 +201,14 @@ The current `Session` object contains the session ID. Conversation history is st
                                                     └─────────────┘
 ```
 
-### Session Layer
+## Session Layer
 
 ```text
                     ┌────────────────────┐
                     │      Session       │
                     │                    │
                     │        ID          │
+                    │     Messages       │
                     └─────────┬──────────┘
                               │
                      ┌────────┴────────┐
@@ -190,16 +217,21 @@ The current `Session` object contains the session ID. Conversation history is st
              In-Memory Store      File Store
 ```
 
-The session layer is intentionally separated from the Agent runtime so session persistence can evolve independently.
+The Session layer is intentionally separated from the Agent runtime so storage and persistence can evolve independently.
+
+The Agent can use a Session as its conversation state while the storage implementation determines how that Session is stored.
 
 ---
 
-## Runtime Flow
+# Runtime Flow
 
-### Native Tool Execution
+## Native Tool Execution
 
 ```text
 User
+ │
+ ▼
+CLI
  │
  ▼
 Agent
@@ -236,7 +268,7 @@ Model
       User
 ```
 
-### MCP Tool Execution
+## MCP Tool Execution
 
 ```text
 Agent
@@ -260,19 +292,48 @@ Tool Result
 Agent
 ```
 
+## Session Flow
+
+```text
+CLI
+ │
+ ▼
+Session Store
+ │
+ ├── Create
+ ├── Get
+ ├── Set
+ └── Delete
+ │
+ ▼
+Session
+ │
+ ├── ID
+ └── Messages
+ │
+ ▼
+Agent
+ │
+ ▼
+Provider / Tools
+```
+
 ---
 
-## Project Structure
+# Project Structure
 
 ```text
 Agent-harness/
+│
 ├── cmd/
 │   ├── main.go
 │   └── main_test.go
 │
 ├── internal/
+│   │
 │   ├── agent/
 │   │   ├── agent.go
+│   │   ├── history.go
 │   │   └── ...
 │   │
 │   ├── config/
@@ -301,6 +362,8 @@ Agent-harness/
 │   ├── session/
 │   │   ├── session.go
 │   │   ├── store.go
+│   │   ├── memory_store.go
+│   │   ├── file_store.go
 │   │   └── ...
 │   │
 │   └── tools/
@@ -328,11 +391,11 @@ Agent-harness/
 
 Configuration controls runtime behavior such as:
 
-* Model
-* Provider
-* Base URL
-* Endpoint
-* Other provider-specific settings
+- Model
+- Provider
+- Base URL
+- Endpoint
+- Other provider-specific settings
 
 A typical configuration looks like:
 
@@ -369,13 +432,14 @@ Future credential backends can be added without changing the Agent or Provider i
 
 ## Sessions
 
-A session represents a logical interaction context.
+A Session represents a logical interaction context.
 
-The current session abstraction is intentionally small:
+The current Session structure is:
 
 ```go
 type Session struct {
-    ID string
+	ID       string
+	Messages []providerpkg.Message
 }
 ```
 
@@ -385,9 +449,11 @@ A session can be created with:
 session := NewSession("default")
 ```
 
+A Session contains both its identifier and its conversation messages.
+
 ### Session Store
 
-The session store provides:
+The Session Store provides:
 
 ```text
 Set
@@ -395,25 +461,45 @@ Get
 Delete
 ```
 
-Two storage implementations are currently available:
+The project currently has two storage implementations:
 
-* In-memory session store
-* File-based session store
+- In-memory session store
+- File-based session store
 
-The file-based implementation provides persistence for session objects.
+The in-memory store keeps sessions for the lifetime of the process.
 
-### Current Limitation
+The file-based store serializes Session objects as JSON files and can restore stored session data.
 
-Session persistence is currently separate from Agent conversation history.
+### Agent Session Integration
 
-The current implementation does **not** automatically:
+The Agent can be connected to a Session:
 
-* Save Agent conversation history to a session
-* Restore conversation history from a session
-* Switch between sessions through the CLI
-* List saved sessions through the CLI
+```go
+err := agent.SetSession(session)
+```
 
-These are planned extensions.
+When a Session is assigned, Agent message operations use the Session's message history.
+
+The Agent can retrieve the active conversation through:
+
+```go
+messages := agent.GetMessages()
+```
+
+This allows session state and Agent execution to share the same conversation history.
+
+### Current Persistence Limitation
+
+The storage layer can persist Session objects, but the full application lifecycle is not yet automatically persistent.
+
+The current implementation does not automatically:
+
+- Persist the active Session after every Agent interaction
+- Automatically restore the previous Session when the application starts
+- Automatically migrate the Agent's active Session to disk
+- Automatically synchronize every conversation update with the file store
+
+These are future extensions.
 
 ---
 
@@ -423,13 +509,13 @@ The Provider interface keeps the Agent independent from a particular model provi
 
 The provider layer is responsible for:
 
-* Sending chat requests
-* Receiving model responses
-* Handling tool definitions
-* Handling tool calls
-* Listing models
-* Checking model availability
-* Pulling local models where supported
+- Sending chat requests
+- Receiving model responses
+- Handling tool definitions
+- Handling tool calls
+- Listing models
+- Checking model availability
+- Pulling local models where supported
 
 ### Ollama
 
@@ -453,7 +539,7 @@ The default chat endpoint is:
 
 ## Agent
 
-The Agent is responsible for maintaining the interaction between the user, model, and tools.
+The Agent is responsible for coordinating the interaction between the user, model, tools, and session state.
 
 Conceptually:
 
@@ -484,25 +570,30 @@ Model Response
             │
             ▼
          Provider
+            │
+            ▼
+      Final Response
 ```
 
 The Agent is provider-neutral and operates through the Provider and Tool abstractions.
+
+When a Session is assigned, the Session becomes the source of conversation messages.
 
 ---
 
 ## Orchestrator
 
-The orchestrator coordinates the Agent execution loop.
+The Orchestrator coordinates the Agent execution loop.
 
 It handles repeated model/tool interactions until:
 
-* The model produces a final response
-* The maximum tool-call limit is reached
-* An error occurs
+- The model produces a final response
+- The maximum tool-call limit is reached
+- An error occurs
 
 The maximum number of tool-call iterations can be configured.
 
-This prevents an agent from entering an uncontrolled tool execution loop.
+This prevents an Agent from entering an uncontrolled tool execution loop.
 
 ---
 
@@ -512,12 +603,14 @@ This prevents an agent from entering an uncontrolled tool execution loop.
 
 Tools expose a common interface containing:
 
-* Name
-* Description
-* Execute
-* Schema
+- Name
+- Description
+- Execute
+- Schema
 
 This allows different tool implementations to be treated uniformly.
+
+The same abstraction can represent native tools and adapted MCP tools.
 
 ---
 
@@ -536,7 +629,7 @@ Remove
 Schemas
 ```
 
-This provides a central mechanism for both native and externally discovered tools.
+This provides a central mechanism for native tools and externally discovered tools.
 
 ---
 
@@ -570,15 +663,15 @@ Result:
 
 ### Shell
 
-The shell tool allows command execution through the tool system.
+The Shell tool allows command execution through the tool system.
 
-It is intended for controlled local agent workflows.
+It is intended for controlled local Agent workflows.
 
 ---
 
 ### Filesystem
 
-The filesystem tool provides filesystem-related operations through the common Tool interface.
+The Filesystem tool provides filesystem-related operations through the common Tool interface.
 
 ---
 
@@ -615,10 +708,10 @@ MCP tools are adapted into the existing `tools.Tool` interface so the Agent does
 
 The MCP client is responsible for:
 
-* Connecting to an MCP server
-* Managing the MCP session
-* Discovering tools
-* Returning discovered tools
+- Connecting to an MCP server
+- Managing the MCP session
+- Discovering tools
+- Returning discovered tools
 
 The client can discover MCP tools through `ListTools`.
 
@@ -668,13 +761,15 @@ This keeps MCP-specific implementation details isolated from the Agent.
 
 ## MCP Tool Registration
 
-Discovered MCP tools can be adapted and registered into the existing tool registry.
+Discovered MCP tools can be adapted and registered into the existing Tool Registry.
 
-This means the Agent can eventually treat:
+This means the Agent can treat:
 
 ```text
 Built-in Tool
+
 MCP Tool
+
 Future External Tool
 ```
 
@@ -708,13 +803,17 @@ The current session ID can be displayed with the `session` command.
 
 ## CLI Commands
 
-| Command   | Description                            |
-| --------- | -------------------------------------- |
-| `help`    | Show available commands                |
-| `model`   | Show the currently configured model    |
-| `session` | Show the current session ID            |
-| `clear`   | Clear the current conversation history |
-| `exit`    | Exit the CLI                           |
+| Command | Description |
+| --- | --- |
+| `help` | Show available commands |
+| `model` | Show the currently configured model |
+| `session` | Show the current session ID |
+| `session create <id>` | Create a new session |
+| `session list` | List stored sessions |
+| `session load <id>` | Load and activate a stored session |
+| `session delete <id>` | Delete a stored session |
+| `clear` | Clear the current conversation history |
+| `exit` | Exit the CLI |
 
 ---
 
@@ -758,28 +857,84 @@ Example:
 Current session: default
 ```
 
-At the moment, the CLI does not yet provide commands for:
+---
+
+## `session create`
+
+Creates a new session and stores it in the active Session Store.
 
 ```text
-session create
-session list
-session load
-session delete
+session create project-a
 ```
 
-These are planned for future session management work.
+Example:
+
+```text
+Session created: project-a
+```
+
+---
+
+## `session list`
+
+Lists the sessions currently stored in the active Session Store.
+
+```text
+session list
+```
+
+Example:
+
+```text
+Sessions:
+- default
+- project-a
+- project-b
+```
+
+---
+
+## `session load`
+
+Loads an existing session and makes it the active session.
+
+```text
+session load project-a
+```
+
+Example:
+
+```text
+Session loaded: project-a
+```
+
+The Agent is updated to use the loaded session.
+
+---
+
+## `session delete`
+
+Deletes a stored session.
+
+```text
+session delete project-a
+```
+
+The CLI prevents deletion of the currently active session.
 
 ---
 
 ## `clear`
 
-Clears the current conversation history held by the Agent.
+Clears the current Agent conversation history.
 
 ```text
 clear
 ```
 
-This currently affects the active Agent conversation history and does not represent persistent session deletion.
+This affects the active conversation history.
+
+It does not delete the Session itself.
 
 ---
 
@@ -795,7 +950,7 @@ exit
 
 # Ollama Setup
 
-Install and start Ollama before running the Agent Harness.
+Install and start Ollama before running Agent Harness.
 
 Start the Ollama server:
 
@@ -861,7 +1016,7 @@ go test ./cmd
 
 ## Integration Testing
 
-The Ollama orchestrator integration test can be enabled with:
+The Ollama Orchestrator integration test can be enabled with:
 
 ```bash
 ORCHESTRATOR_INTEGRATION=1 go test ./...
@@ -869,9 +1024,9 @@ ORCHESTRATOR_INTEGRATION=1 go test ./...
 
 The integration test requires:
 
-* Ollama running locally
-* A compatible model available
-* The configured model supporting the required tool-calling behavior
+- Ollama running locally
+- A compatible model available
+- The configured model supporting the required tool-calling behavior
 
 ---
 
@@ -922,80 +1077,171 @@ The workflow is intended to validate changes on the repository's configured bran
 
 # End-to-End Example
 
-A simplified execution looks like this:
+A simplified native tool execution looks like this:
 
 ```text
 User
+
  │
+
  │ "What is 10 + 20?"
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama Provider
+
  │
+
  ▼
+
 Local Model
+
  │
+
  │ Tool Call
+
  ▼
+
 Tool Registry
+
  │
+
  ▼
+
 Calculator
+
  │
+
  │ 10 + 20
+
  ▼
+
 30
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama Provider
+
  │
+
  ▼
+
 Final Response
+
  │
+
  ▼
+
 CLI
 ```
 
-For an MCP tool:
+A simplified MCP tool execution looks like this:
+
+```text
+User
+
+ │
+
+ ▼
+
+Agent
+
+ │
+
+ ▼
+
+Ollama
+
+ │
+
+ │ MCP Tool Call
+
+ ▼
+
+Tool Registry
+
+ │
+
+ ▼
+
+MCP Adapter
+
+ │
+
+ ▼
+
+MCP Client
+
+ │
+
+ ▼
+
+MCP Server
+
+ │
+
+ ▼
+
+Tool Result
+
+ │
+
+ ▼
+
+Agent
+
+ │
+
+ ▼
+
+Final Response
+```
+
+A simplified session-aware flow looks like this:
 
 ```text
 User
  │
  ▼
-Agent
+CLI
  │
  ▼
-Ollama
+Active Session
  │
- │ MCP Tool Call
- ▼
-Tool Registry
- │
- ▼
-MCP Adapter
- │
- ▼
-MCP Client
- │
- ▼
-MCP Server
- │
- ▼
-Tool Result
+ ├── ID
+ └── Messages
  │
  ▼
 Agent
  │
  ▼
-Final Response
+Provider
+ │
+ ▼
+Tool Execution
+ │
+ ▼
+Updated Session Messages
 ```
 
 ---
@@ -1014,11 +1260,28 @@ Provider-specific behavior belongs behind the Provider interface.
 
 The Agent should not need to know whether a tool is:
 
-* Built into the project
-* Provided by an MCP server
-* Added by another future integration
+- Built into the project
+- Provided by an MCP server
+- Added by another future integration
 
 All tools should be exposed through the common Tool abstraction.
+
+---
+
+## Session Independence
+
+Session storage is separated from the Agent runtime.
+
+This allows different storage implementations to be introduced without requiring major changes to Agent execution.
+
+Potential session backends include:
+
+```text
+In-Memory
+File
+Database
+Remote Storage
+```
 
 ---
 
@@ -1028,13 +1291,21 @@ The project separates:
 
 ```text
 Configuration
+
 Credentials
+
 Sessions
+
 Providers
+
 Agent
+
 Orchestration
+
 Tools
+
 MCP
+
 CLI
 ```
 
@@ -1058,84 +1329,114 @@ Potential future extensions include:
 
 ```text
 Additional Providers
+
 Additional Tool Sources
+
 Additional Credential Backends
+
 Additional Session Backends
+
 Remote MCP Servers
+
 Persistent Conversation Storage
+
+Database-backed Sessions
+
 ```
 
 ---
 
 # Implementation Status
 
-| Component                             | Status      |
-| ------------------------------------- | ----------- |
-| Go project structure                  | Implemented |
-| Provider abstraction                  | Implemented |
-| Ollama provider                       | Implemented |
-| Conversation history                  | Implemented |
-| Agent runtime                         | Implemented |
-| Tool abstraction                      | Implemented |
-| Tool registry                         | Implemented |
-| Calculator tool                       | Implemented |
-| Shell tool                            | Implemented |
-| Filesystem tool                       | Implemented |
-| MCP client                            | Implemented |
-| MCP tool discovery                    | Implemented |
-| MCP tool adapter                      | Implemented |
-| MCP tool registration foundation      | Implemented |
-| Credential abstraction                | Implemented |
-| Credential storage                    | Implemented |
-| Session abstraction                   | Implemented |
-| In-memory session store               | Implemented |
-| File-based session store              | Implemented |
-| Interactive CLI                       | Implemented |
-| CLI model command                     | Implemented |
-| CLI session display                   | Implemented |
-| CLI conversation clearing             | Implemented |
-| CLI session management                | Planned     |
-| Persistent Agent conversation history | Planned     |
-| Session restore                       | Planned     |
-| Multiple active sessions              | Planned     |
-| Additional providers                  | Planned     |
+| Component | Status |
+| --- | --- |
+| Go project structure | Implemented |
+| Provider abstraction | Implemented |
+| Ollama provider | Implemented |
+| Conversation history | Implemented |
+| Agent runtime | Implemented |
+| Session-aware Agent runtime | Implemented |
+| Tool abstraction | Implemented |
+| Tool registry | Implemented |
+| Calculator tool | Implemented |
+| Shell tool | Implemented |
+| Filesystem tool | Implemented |
+| MCP client | Implemented |
+| MCP tool discovery | Implemented |
+| MCP tool adapter | Implemented |
+| MCP tool registration foundation | Implemented |
+| Credential abstraction | Implemented |
+| Credential storage | Implemented |
+| Session abstraction | Implemented |
+| Session message storage | Implemented |
+| In-memory session store | Implemented |
+| File-based session store | Implemented |
+| Interactive CLI | Implemented |
+| CLI model command | Implemented |
+| CLI session display | Implemented |
+| CLI conversation clearing | Implemented |
+| CLI session creation | Implemented |
+| CLI session listing | Implemented |
+| CLI session loading | Implemented |
+| CLI session deletion | Implemented |
+| Persistent Agent conversation history | Partial |
+| Automatic session persistence | Planned |
+| Automatic session restore | Planned |
+| Database-backed sessions | Planned |
+| Additional providers | Planned |
+| Expanded MCP functionality | Planned |
 
 ---
 
 # Roadmap
 
-## Session Management
-
-Planned CLI commands:
-
-```text
-session create
-session list
-session load
-session delete
-```
-
-The goal is to allow users to manage multiple persistent sessions directly from the CLI.
-
----
-
 ## Persistent Conversation History
 
-The next stage of session development is connecting Agent conversation history with the session storage layer.
+The next stage of session development is connecting Agent conversation updates with the session storage layer.
 
 Future flow:
 
 ```text
-Session
- │
- ▼
-Conversation History
- │
- ▼
+User Interaction
+      │
+      ▼
+Agent
+      │
+      ▼
+Session Messages
+      │
+      ▼
+Session Store
+      │
+      ▼
 Persistent Storage
 ```
 
-This will allow conversations to survive application restarts.
+This will allow conversations to survive application restarts automatically.
+
+---
+
+## Improved Session Management
+
+Future session improvements include:
+
+```text
+Automatic Session Persistence
+
+Automatic Session Restore
+
+Database-backed Sessions
+
+Session Metadata
+
+Session Timestamps
+
+Session Renaming
+
+Session Export
+
+Session Import
+```
 
 ---
 
@@ -1143,13 +1444,13 @@ This will allow conversations to survive application restarts.
 
 Future MCP work includes:
 
-* CLI configuration of MCP servers
-* MCP server lifecycle management
-* Dynamic MCP server registration
-* Better error handling
-* More complete MCP resource support
-* MCP prompts
-* MCP sampling where applicable
+- CLI configuration of MCP servers
+- MCP server lifecycle management
+- Dynamic MCP server registration
+- Better error handling
+- More complete MCP resource support
+- MCP prompts
+- MCP sampling where applicable
 
 ---
 
@@ -1159,9 +1460,12 @@ The provider abstraction allows future integrations such as:
 
 ```text
 OpenAI-compatible APIs
+
 Anthropic
+
 Google
-Other local model runtimes
+
+Other Local Model Runtimes
 ```
 
 Provider implementations can be added without changing the core Agent architecture.
@@ -1173,12 +1477,21 @@ Provider implementations can be added without changing the core Agent architectu
 Planned CLI improvements include:
 
 ```text
-Session management
-Provider management
-Tool listing
-MCP server management
-Configuration inspection
-Model management
+Session Management
+
+Provider Management
+
+Tool Listing
+
+MCP Server Management
+
+Configuration Inspection
+
+Model Management
+
+Persistent Session Selection
+
+Interactive Tool Inspection
 ```
 
 ---
@@ -1225,27 +1538,41 @@ Then open a pull request against the appropriate base branch.
 
 # Project Goals
 
-The long-term goal of Agent Harness is to provide a modular runtime for building tool-using AI agents while keeping the underlying architecture understandable and extensible.
+The long-term goal of Agent Harness is to provide a modular runtime for building tool-using AI agents while keeping the underlying architecture understandable, testable, and extensible.
 
 The project focuses on:
 
 ```text
 Provider Abstraction
+
         +
+
 Agent Runtime
+
         +
+
 Tool Execution
+
         +
+
 MCP
+
         +
+
 Credentials
+
         +
+
 Sessions
+
         +
+
 CLI
 ```
 
 The architecture is intentionally built incrementally so each subsystem can be tested independently before being connected to the larger runtime.
+
+The project is designed to evolve toward a more complete agent runtime while maintaining clear boundaries between providers, tools, sessions, credentials, MCP, and the CLI.
 
 ---
 
