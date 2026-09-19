@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	agentpkg "agent-harness/internal/agent"
 	providerpkg "agent-harness/internal/provider"
 	sessionpkg "agent-harness/internal/session"
 )
@@ -142,8 +143,10 @@ func TestSelectModel(t *testing.T) {
 			expectOutput:   "Invalid choice",
 		},
 		{
-			name:           "Pulls configured model",
-			provider:       &fakeLocalProvider{},
+			name: "Pulls configured model",
+			provider: &fakeLocalProvider{
+				models: []string{},
+			},
 			configured:     "llama3.1",
 			input:          "p\n",
 			expected:       "llama3.1",
@@ -411,6 +414,7 @@ func TestHandleCommand(t *testing.T) {
 			var output strings.Builder
 
 			sessionStore := sessionpkg.NewSessionStore()
+			agentClient := agentpkg.NewAgent(nil)
 
 			currentSession := sessionpkg.NewSession("test-session")
 
@@ -448,12 +452,21 @@ func TestHandleCommand(t *testing.T) {
 				}
 			}
 
+			err = agentClient.SetSession(currentSession)
+			if err != nil {
+				t.Fatalf(
+					"expected no error while setting agent session, got %v",
+					err,
+				)
+			}
+
 			got := handleCommand(
 				testCase.input,
 				testCase.model,
 				testCase.modelSource,
 				&currentSession,
 				sessionStore,
+				agentClient,
 				&output,
 			)
 
@@ -490,6 +503,12 @@ func TestHandleCommand(t *testing.T) {
 					t.Fatalf(
 						"expected current session to be loaded-session, got %q",
 						currentSession.ID,
+					)
+				}
+
+				if agentClient.GetMessages() == nil {
+					t.Fatalf(
+						"expected agent to have active session",
 					)
 				}
 			}
