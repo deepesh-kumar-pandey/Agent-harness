@@ -303,6 +303,30 @@ func TestHandleCommand(t *testing.T) {
 			expectedOutput: "Current session: test-session",
 		},
 		{
+			name:           "Session list command",
+			input:          "session list",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Sessions:\n- test-session",
+		},
+		{
+			name:           "Session create command",
+			input:          "session create new-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Created session: new-session",
+		},
+		{
+			name:           "Session create command missing ID",
+			input:          "session create",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: session create <id>",
+		},
+		{
 			name:           "Clear command",
 			input:          "clear",
 			model:          "test-model",
@@ -330,13 +354,24 @@ func TestHandleCommand(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			var output strings.Builder
 
+			sessionStore := sessionpkg.NewSessionStore()
+
 			currentSession := sessionpkg.NewSession("test-session")
+
+			err := sessionStore.Set(currentSession)
+			if err != nil {
+				t.Fatalf(
+					"expected no error while setting session, got %v",
+					err,
+				)
+			}
 
 			got := handleCommand(
 				testCase.input,
 				testCase.model,
 				testCase.modelSource,
 				currentSession,
+				sessionStore,
 				&output,
 			)
 
@@ -355,6 +390,17 @@ func TestHandleCommand(t *testing.T) {
 					testCase.expectedOutput,
 					output.String(),
 				)
+			}
+
+			if testCase.input == "session create new-session" {
+				_, err := sessionStore.Get("new-session")
+
+				if err != nil {
+					t.Fatalf(
+						"expected new-session to exist in store, got error: %v",
+						err,
+					)
+				}
 			}
 		})
 	}
