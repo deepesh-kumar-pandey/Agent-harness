@@ -40,3 +40,13 @@ func (s *MemoryStore) Delete(id string) error {
 
 	return nil
 }
+
+func (s *MemoryStore) List() []*Session {
+	sessions := make([]*Session, 0, len(s.sessions))
+
+	for _, session := range s.sessions {
+		sessions = append(sessions, session)
+	}
+
+	return sessions
+}
