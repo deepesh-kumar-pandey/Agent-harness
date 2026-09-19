@@ -455,6 +455,11 @@ func main() {
 			continue
 		}
 
+		if err := sessionStore.Set(currentSession); err != nil {
+			fmt.Println("Session save error:", err)
+			continue
+		}
+
 		fmt.Println(response.Content)
 	}
 
