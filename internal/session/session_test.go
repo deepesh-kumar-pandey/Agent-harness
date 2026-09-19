@@ -30,6 +30,17 @@ func TestNewSession(t *testing.T) {
 			if session.ID != testCase.id {
 				t.Errorf("expected ID %q, got %q", testCase.id, session.ID)
 			}
+
+			if session.Messages == nil {
+				t.Fatal("expected messages, got nil")
+			}
+
+			if len(session.Messages) != 0 {
+				t.Errorf(
+					"expected empty messages, got %d",
+					len(session.Messages),
+				)
+			}
 		})
 	}
 }
