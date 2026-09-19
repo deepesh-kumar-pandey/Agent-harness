@@ -33,7 +33,7 @@ func (store *SessionStore) Get(id string) (*Session, error) {
 	session, exists := store.sessions[id]
 
 	if !exists {
-		return nil, fmt.Errorf("session not found %s", id)
+		return nil, fmt.Errorf("session not found: %s", id)
 	}
 
 	return session, nil
