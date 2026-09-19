@@ -311,6 +311,30 @@ func TestHandleCommand(t *testing.T) {
 			expectedOutput: "Sessions:\n- test-session",
 		},
 		{
+			name:           "Session load command",
+			input:          "session load loaded-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Loaded session: loaded-session",
+		},
+		{
+			name:           "Session load command missing ID",
+			input:          "session load",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: session load <id>",
+		},
+		{
+			name:           "Session load command session not found",
+			input:          "session load missing-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Failed to load session: session not found: missing-session",
+		},
+		{
 			name:           "Session create command",
 			input:          "session create new-session",
 			model:          "test-model",
@@ -366,11 +390,24 @@ func TestHandleCommand(t *testing.T) {
 				)
 			}
 
+			if testCase.input == "session load loaded-session" {
+				err := sessionStore.Set(
+					sessionpkg.NewSession("loaded-session"),
+				)
+
+				if err != nil {
+					t.Fatalf(
+						"expected no error while setting loaded session, got %v",
+						err,
+					)
+				}
+			}
+
 			got := handleCommand(
 				testCase.input,
 				testCase.model,
 				testCase.modelSource,
-				currentSession,
+				&currentSession,
 				sessionStore,
 				&output,
 			)
@@ -399,6 +436,15 @@ func TestHandleCommand(t *testing.T) {
 					t.Fatalf(
 						"expected new-session to exist in store, got error: %v",
 						err,
+					)
+				}
+			}
+
+			if testCase.input == "session load loaded-session" {
+				if currentSession.ID != "loaded-session" {
+					t.Fatalf(
+						"expected current session to be loaded-session, got %q",
+						currentSession.ID,
 					)
 				}
 			}
