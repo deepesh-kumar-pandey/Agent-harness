@@ -185,7 +185,7 @@ func handleCommand(
 	input string,
 	model string,
 	modelSource string,
-	currentSession *sessionpkg.Session,
+	currentSession **sessionpkg.Session,
 	sessionStore *sessionpkg.SessionStore,
 	output io.Writer,
 ) CommandResult {
@@ -217,12 +217,38 @@ func handleCommand(
 			fmt.Fprintf(
 				output,
 				"Current session: %s\n",
-				currentSession.ID,
+				(*currentSession).ID,
 			)
 			return CommandHandled
 		}
 
 		switch parts[1] {
+		case "load":
+			if len(parts) != 3 {
+				fmt.Fprintln(output, "Usage: session load <id>")
+				return CommandHandled
+			}
+
+			session, err := sessionStore.Get(parts[2])
+			if err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to load session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			*currentSession = session
+
+			fmt.Fprintf(
+				output,
+				"Loaded session: %s\n",
+				session.ID,
+			)
+
+			return CommandHandled
+
 		case "list":
 			sessions := sessionStore.List()
 
@@ -353,7 +379,7 @@ func main() {
 			input,
 			model,
 			modelSource,
-			currentSession,
+			&currentSession,
 			sessionStore,
 			os.Stdout,
 		)
