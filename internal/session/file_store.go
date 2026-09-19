@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type FileSessionStore struct {
@@ -57,6 +58,32 @@ func (store *FileSessionStore) Delete(id string) error {
 	}
 
 	return nil
+}
+
+func (store *FileSessionStore) List() []*Session {
+	entries, err := os.ReadDir(store.dir)
+	if err != nil {
+		return []*Session{}
+	}
+
+	sessions := make([]*Session, 0)
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".json")
+
+		session, err := store.Get(id)
+		if err != nil {
+			continue
+		}
+
+		sessions = append(sessions, session)
+	}
+
+	return sessions
 }
 
 func (store *FileSessionStore) sessionPath(id string) string {
