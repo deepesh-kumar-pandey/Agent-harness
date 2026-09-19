@@ -1,793 +1,1499 @@
 # Agent Harness
 
-Agent Harness is a Go-based runtime for building and running tool-using AI agents. It provides provider abstraction, conversation history, native tool execution, MCP integration, credential management, and an interactive CLI.
+Agent Harness is a Go-based runtime for building and running tool-using AI agents. It provides provider abstraction, conversation history, native tool execution, MCP integration, credential management, session storage, and an interactive CLI.
 
 The project is designed with a local-first architecture while keeping the core runtime provider-neutral and extensible.
+
+---
 
 ## Current Status
 
 The project currently supports:
 
-* Provider-neutral LLM communication
-* Ollama integration with native tool calling
-* Local model discovery and pulling
-* Native local tools
-* MCP client creation and connection
-* MCP tool discovery
-* MCP tool wrappers and execution
-* MCP tools integrated with the existing Tool Registry
-* Credential storage
-* In-memory conversation history
-* Agent and orchestrator execution
+* Provider abstraction with Ollama integration
+* Conversation history and agent orchestration
+* Native tool calling
+* Built-in calculator, shell, and filesystem tools
+* Tool registry with dynamic registration and removal
+* MCP client integration
+* MCP tool discovery and adaptation into the native tool system
+* Credential storage and retrieval
+* In-memory and file-based session storage
+* Session-aware Agent runtime
+* Persistent Agent conversation history
+* Automatic file-based session persistence after successful Agent interactions
+* Default session restoration when the application starts
+* CLI session creation, listing, loading, and deletion
 * Interactive CLI
-* Unit and integration testing
+* CLI model inspection and session display
+* Local Ollama model management
+* Unit and integration tests
+* Go formatting, testing, and static analysis
+* GitHub Actions CI
 
-Ollama remains the current fully integrated provider. Additional cloud providers can be added through the provider abstraction without changing the Agent or Orchestrator layers.
+The core runtime is functional. Current development is focused on strengthening session management, MCP capabilities, and runtime extensibility.
 
-MCP tools can be discovered from connected MCP servers, adapted to the existing `tools.Tool` interface, and registered with the Tool Registry alongside native tools. MCP support is currently exposed through the library and tests; the interactive CLI does not configure MCP servers.
+---
 
-## Features
+# Features
 
-* Go-based agent runtime
-* Provider abstraction with provider-neutral `Message`, `ChatRequest`, `ChatResponse`, `ToolCall`, and `ToolDefinition` types
-* Ollama provider with native function/tool calling
-* JSON Schema-based tool definitions
-* Ollama local model discovery and model pulling
-* Tool Registry with registration, lookup, listing, removal, and schema exposure
-* Agent layer for tool access and in-memory conversation history
-* Orchestrator for provider communication and tool execution
-* Multiple native tool calls in a single provider response
-* Structured JSON tool-call handling
-* Maximum tool-call protection through `WithMaxToolCalls`
-* Calculator, filesystem, and shell tools
-* MCP client creation and server connection
+## Provider Abstraction
+
+The runtime uses provider-neutral interfaces so the Agent does not depend directly on a specific model provider.
+
+Currently integrated:
+
+* Ollama
+
+The provider layer supports:
+
+* Chat requests
+* Chat responses
+* Conversation messages
+* Tool definitions
+* Tool calls
+* Model listing
+* Model availability checks
+* Model pulling
+
+Provider-specific behavior is kept behind the Provider abstraction.
+
+---
+
+## Agent Runtime
+
+The Agent manages conversation state and provides access to the tool system, while the Orchestrator coordinates provider interaction and the Agent execution loop.
+
+The runtime supports:
+
+* User messages
+* Assistant responses
+* Tool calls
+* Tool results
+* Multiple tool calls
+* Configurable maximum tool-call iterations
+* Provider-neutral execution
+* Session-aware conversation history
+
+The Agent can operate with its internal conversation history or with an explicitly assigned Session.
+
+---
+
+## Tool Registry
+
+The Tool Registry provides a central system for managing executable tools.
+
+Built-in tools currently include:
+
+* Calculator
+* Shell
+* Filesystem
+
+The registry supports:
+
+* Registering tools
+* Looking up tools
+* Checking whether a tool exists
+* Listing tools
+* Removing tools
+* Generating tool schemas
+
+The registry provides the common execution layer used by both native and adapted MCP tools.
+
+---
+
+## MCP Integration
+
+The project includes support for the Model Context Protocol (MCP).
+
+The MCP implementation currently provides:
+
+* MCP client creation
+* MCP server connections
+* MCP session management
 * MCP tool discovery
-* MCP tool abstraction
-* MCP tool adapter for the native `tools.Tool` interface
-* MCP tool registration with the Tool Registry
+* MCP tool metadata
 * MCP tool execution
-* Local credential storage
-* Interactive CLI
-* Unit tests
-* Ollama integration tests
-* End-to-end native tool execution
-* End-to-end MCP tool execution through the Agent and Orchestrator
+* Conversion of MCP tools into native Agent Harness tools
+* Tool adapter integration with the native Tool interface
 
-## Architecture
+MCP tools can participate in the same tool execution flow as built-in tools.
+
+---
+
+## Credential Management
+
+The project includes a credential storage abstraction for managing provider or service credentials.
+
+Credential functionality provides:
+
+* Credential storage
+* Credential retrieval
+* Credential deletion
+* A storage abstraction that can be extended later
+
+Credentials are kept separate from provider logic so credential backends can evolve independently.
+
+---
+
+## Session Management
+
+The project includes a session abstraction and session storage layer.
+
+Current session functionality includes:
+
+* Session creation
+* Session IDs
+* Session message storage
+* In-memory session storage
+* File-based session storage
+* Set
+* Get
+* Delete
+* Agent session assignment
+* Session-aware Agent message handling
+* Persistent conversation history
+* File-based session persistence
+* Default session restoration at application startup
+
+A Session currently contains:
+
+* Session ID
+* Conversation messages
+
+The Agent can be connected to a Session using the session-aware runtime.
+
+The file-based store serializes Session objects as JSON files and can restore stored session data.
+
+The active session is persisted after successful Agent interactions, allowing conversation history to survive application restarts.
+
+The application currently restores the `default` session when it starts.
+
+---
+
+# Architecture
 
 ```text
-                           User
-                             |
-                             v
-                            CLI
-                             |
-                             v
-                       Orchestrator
-                             |
-                             v
-                           Agent
-                             |
-                             v
-                       Tool Registry
-                       /           \
-                      /             \
-                     v               v
-             Native Tools        MCP Adapter
-             /    |    \             |
-            v     v     v            v
-      Calculator Shell Filesystem  MCP Tool
-                                      |
-                                      v
-                                 MCP Client
-                                      |
-                                      v
-                                 MCP Server
+                         ┌──────────────────────┐
+                         │     Interactive CLI  │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │        Agent         │
+                         │                      │
+                         │ Conversation History │
+                         │ Session Integration  │
+                         │ Tool Execution       │
+                         └──────────┬───────────┘
+                                    │
+                         ┌──────────┴───────────┐
+                         │                      │
+                         ▼                      ▼
+                ┌─────────────────┐    ┌─────────────────┐
+                │    Provider     │    │  Tool Registry  │
+                │                 │    │                 │
+                │ Ollama          │    │ Calculator      │
+                │                 │    │ Shell           │
+                │                 │    │ Filesystem      │
+                └─────────────────┘    └────────┬────────┘
+                                                 │
+                                      ┌──────────┴──────────┐
+                                      │                     │
+                                      ▼                     ▼
+                               Native Tools          MCP Tools
+                                                           │
+                                                           ▼
+                                                    ┌─────────────┐
+                                                    │ MCP Client  │
+                                                    └─────────────┘
 ```
 
-The MCP adapter allows discovered MCP tools to enter the same tool boundary as native tools.
-
-The layers have distinct responsibilities:
-
-* **Config** loads and validates provider configuration.
-* **Credentials** stores and retrieves provider credentials separately from general configuration.
-* **Provider** communicates with the LLM and exposes provider-neutral types. The Ollama implementation converts those types to and from the Ollama API.
-* **Agent** owns the Tool Registry and in-memory conversation history, and provides tool execution.
-* **Orchestrator** coordinates the agent loop, provider communication, tool calls, tool results, and maximum tool-call protection.
-* **Tool Registry** registers, retrieves, lists, removes, and exposes schemas for native and adapted MCP tools.
-* **MCP Client** creates MCP client sessions, connects to MCP servers, and discovers available MCP tools.
-* **MCP Tool Wrapper** represents an MCP tool locally and forwards execution requests to the connected MCP server.
-* **Tool Adapter** converts an MCP tool into the existing `tools.Tool` interface so it can be registered and executed through the Tool Registry.
-* **Concrete Tools** perform local operations.
-* **MCP Servers** provide external tools through the Model Context Protocol.
-
-The LLM/provider produces the tool-call decision. The Agent does not plan or decide what should happen. The Orchestrator coordinates execution, the Registry manages the available tools, the MCP layer manages MCP communication, and the selected tool performs the operation.
-
-## Runtime Flow
-
-For a normal native-tool chat request, the runtime follows this sequence:
-
-1. The CLI creates a `ChatRequest` containing the user's message.
-2. The Orchestrator adds the message to the Agent's in-memory history.
-3. The Agent exposes available tool definitions from the Tool Registry.
-4. The Provider receives the conversation and available tool definitions.
-5. The Provider returns either a final response or one or more tool calls.
-6. The Orchestrator executes each tool call through the Agent.
-7. The Agent resolves the requested tool through the Tool Registry.
-8. The tool result is added to the conversation.
-9. The updated conversation is sent back to the Provider.
-10. The loop continues until the Provider returns a final response or the configured maximum tool-call limit is reached.
-
-For MCP tools, the registration flow is:
-
-1. The MCP client is created.
-2. The client connects to an MCP server through an SDK transport.
-3. A client session is established.
-4. Available MCP tools are requested from the server.
-5. Each discovered MCP tool is wrapped by the Agent Harness MCP tool abstraction.
-6. A `ToolAdapter` converts the MCP tool into the native `tools.Tool` interface.
-7. The adapted tool is registered with the existing Tool Registry.
-8. The Agent can expose the MCP tool alongside native tools.
-9. When the Provider requests the MCP tool, the Agent resolves it through the Tool Registry.
-10. The adapter forwards execution through the MCP client session to the MCP server.
-11. The MCP result is returned to the Agent and added to the conversation.
-
-Conversation history is retained only in memory for the lifetime of the Agent instance.
-
-## Project Structure
+## Session Layer
 
 ```text
-agent-harness/
+                    ┌────────────────────┐
+                    │      Session       │
+                    │                    │
+                    │        ID          │
+                    │     Messages       │
+                    └─────────┬──────────┘
+                              │
+                     ┌────────┴────────┐
+                     │                 │
+                     ▼                 ▼
+             In-Memory Store      File Store
+```
 
+The Session layer is intentionally separated from the Agent runtime so storage and persistence can evolve independently.
+
+The Agent can use a Session as its conversation state while the storage implementation determines how that Session is stored.
+
+---
+
+# Runtime Flow
+
+## Native Tool Execution
+
+```text
+User
+ │
+ ▼
+CLI
+ │
+ ▼
+Agent
+ │
+ ▼
+Provider
+ │
+ ▼
+Model
+ │
+ ├── Normal response ──────────────► Agent ──► User
+ │
+ └── Tool call
+       │
+       ▼
+   Tool Registry
+       │
+       ▼
+   Tool Execution
+       │
+       ▼
+   Tool Result
+       │
+       ▼
+     Agent
+       │
+       ▼
+    Provider
+       │
+       ▼
+    Final Response
+       │
+       ▼
+      User
+```
+
+## MCP Tool Execution
+
+```text
+Agent
+ │
+ ▼
+Tool Registry
+ │
+ ▼
+MCP Tool Adapter
+ │
+ ▼
+MCP Client
+ │
+ ▼
+MCP Server
+ │
+ ▼
+Tool Result
+ │
+ ▼
+Agent
+```
+
+## Session Flow
+
+```text
+CLI
+ │
+ ▼
+Session Store
+ │
+ ├── Create
+ ├── Get
+ ├── Set
+ └── Delete
+ │
+ ▼
+Session
+ │
+ ├── ID
+ └── Messages
+ │
+ ▼
+Agent
+ │
+ ▼
+Provider / Tools
+ │
+ ▼
+Session Store
+ │
+ ▼
+Persistent Storage
+```
+
+---
+
+# Project Structure
+
+```text
+Agent-harness/
+│
 ├── cmd/
 │   ├── main.go
 │   └── main_test.go
-├── config/
-│   ├── config.go
-│   ├── config.example.json
-│   └── config_test.go
-├── filesystem/
-│   ├── filesystem.go
-│   └── filesystem_test.go
-├── shell/
-│   ├── shell.go
-│   └── shell_test.go
+│
 ├── internal/
+│   │
 │   ├── agent/
 │   │   ├── agent.go
-│   │   ├── agent_test.go
 │   │   ├── history.go
-│   │   └── history_test.go
+│   │   └── ...
+│   │
+│   ├── config/
+│   │   ├── config.go
+│   │   └── ...
+│   │
 │   ├── credentials/
 │   │   ├── credentials.go
-│   │   ├── store.go
-│   │   └── store_test.go
+│   │   └── ...
+│   │
 │   ├── mcp/
-│   │   ├── adapter.go
-│   │   ├── adapter_test.go
 │   │   ├── client.go
-│   │   ├── client_test.go
-│   │   ├── tools.go
-│   │   └── tools_test.go
+│   │   ├── tool.go
+│   │   ├── adapter.go
+│   │   └── ...
+│   │
 │   ├── orchestrator/
 │   │   ├── orchestrator.go
-│   │   ├── orchestrator_integration_test.go
-│   │   ├── orchestrator_test.go
-│   │   ├── response.go
-│   │   └── response_test.go
+│   │   └── ...
+│   │
 │   ├── provider/
 │   │   ├── provider.go
-│   │   ├── provider_integration_test.go
-│   │   └── provider_test.go
+│   │   ├── ollama.go
+│   │   └── ...
+│   │
+│   ├── session/
+│   │   ├── session.go
+│   │   ├── store.go
+│   │   ├── memory_store.go
+│   │   ├── file_store.go
+│   │   └── ...
+│   │
 │   └── tools/
+│       ├── tool.go
+│       ├── registry.go
 │       ├── calculator.go
-│       ├── calculator_test.go
-│       ├── filesystem_tool.go
-│       ├── filesystem_tool_test.go
-│       ├── registry_test.go
-│       ├── shell_tool.go
-│       ├── shell_tool_test.go
-│       ├── ToolRegistry.go
-│       └── tools.go
-├── go.mod
-├── go.sum
+│       ├── shell.go
+│       ├── filesystem.go
+│       └── ...
+│
 ├── .github/
 │   └── workflows/
-│       └── go.yml
+│
+├── go.mod
+├── go.sum
 ├── LICENSE
-├── .gitignore
 └── README.md
 ```
 
-## Core Components
+---
 
-### Config
+# Core Components
 
-`config/config.go` loads and validates provider configuration.
+## Config
 
-Configuration contains provider information such as:
+Configuration controls runtime behavior such as:
 
-* Provider name
 * Model
+* Provider
 * Base URL
-* API endpoint
+* Endpoint
+* Other provider-specific settings
 
-Credentials are intentionally kept separate from the configuration system.
+A typical configuration looks like:
 
-### Credentials
-
-The `internal/credentials` package provides a simple credential abstraction:
-
-```go
-type CredentialStore interface {
-    Set(provider string, key string) error
-    Get(provider string) (string, error)
-    Delete(provider string) error
+```json
+{
+  "model": "llama3.1",
+  "provider": "ollama",
+  "base_url": "http://localhost:11434",
+  "endpoint": "/api/chat"
 }
 ```
 
-The current implementation uses a local file store.
+The configuration layer keeps provider-specific configuration outside the core Agent implementation.
 
-Credentials are stored outside the repository under:
+---
+
+## Credentials
+
+Credential management is separated from provider configuration.
+
+The credential layer provides an abstraction for:
 
 ```text
-~/.agent-harness/credentials.json
+Set
+Get
+Delete
 ```
 
-The credential store provides three operations:
+This allows credentials to be handled independently from model configuration.
 
-* **Set** stores or updates a credential for a provider.
-* **Get** retrieves the stored credential for a provider.
-* **Delete** removes the stored credential for a provider.
+Future credential backends can be added without changing the Agent or Provider interfaces.
 
-The credential layer is intentionally separated behind an interface so the underlying storage can be replaced later without changing the rest of the runtime.
+---
 
-### Provider
+## Sessions
 
-The `Provider` interface exposes LLM communication without coupling the rest of the application to a specific provider.
+A Session represents a logical interaction context.
 
-The current Ollama implementation:
+The current Session structure is:
 
-* Sends non-streaming chat requests
-* Converts JSON Schema tool definitions into Ollama function tools
-* Decodes native tool calls
-* Lists local models through `/api/tags`
-* Pulls models through `/api/pull`
+```go
+type Session struct {
+    ID       string
+    Messages []providerpkg.Message
+}
+```
 
-Additional providers can be implemented behind the same provider boundary.
+A session can be created with:
 
-### Agent
+```go
+session := NewSession("default")
+```
 
-The Agent:
+A Session contains both its identifier and its conversation messages.
 
-* Owns the Tool Registry
-* Owns conversation history
-* Exposes tool definitions
-* Executes named tools
-* Validates conversation messages
+### Session Store
 
-The Agent does not select tools or make planning decisions.
+The Session Store provides:
 
-Both native tools and adapted MCP tools can be exposed through the Tool Registry.
+```text
+Set
+Get
+Delete
+```
 
-### Orchestrator
+The project currently has two storage implementations:
 
-The Orchestrator coordinates:
+* In-memory session store
+* File-based session store
 
-* Provider communication
-* Agent interaction
-* Tool calls
-* Tool results
-* Conversation updates
-* Structured tool-call responses
-* Maximum tool-call protection
+The in-memory store keeps sessions for the lifetime of the process.
 
-`RunAgent` contains the main execution loop that allows the provider to request tools and receive their results.
+The file-based store serializes Session objects as JSON files and can restore stored session data.
 
-### Tool Registry
+### Agent Session Integration
 
-The Tool Registry provides a unified registry for tools that implement the native `tools.Tool` interface.
+The Agent can be connected to a Session:
 
-The default registry contains:
+```go
+err := agent.SetSession(session)
+```
 
-* `calculator`
-* `shell`
-* `filesystem`
+When a Session is assigned, Agent message operations use the Session's message history.
 
-The Registry supports:
+The Agent can retrieve the active conversation through:
 
-* `Register`
-* `Remove`
-* `Get`
-* `Has`
-* `List`
-* `Schemas`
+```go
+messages := agent.GetMessages()
+```
 
-Each registered tool exposes:
+This allows session state and Agent execution to share the same conversation history.
+
+### Session Persistence
+
+The application persists the active Session after successful Agent interactions.
+
+The file-based store stores the Session as a JSON file, including its conversation messages.
+
+When the application starts, the default session is loaded from the file-based Session Store if it already exists.
+
+This allows conversation history to survive application restarts.
+
+The current persistence implementation is focused on the CLI lifecycle. Future improvements can provide more comprehensive synchronization between all Session mutations and persistent storage.
+
+---
+
+## Provider
+
+The Provider interface keeps the Agent independent from a particular model provider.
+
+The provider layer is responsible for:
+
+* Sending chat requests
+* Receiving model responses
+* Handling tool definitions
+* Handling tool calls
+* Listing models
+* Checking model availability
+* Pulling local models where supported
+
+### Ollama
+
+Ollama is currently the primary integrated provider.
+
+The implementation supports local Ollama models and native tool calling.
+
+The default Ollama endpoint is:
+
+```text
+http://localhost:11434
+```
+
+The default chat endpoint is:
+
+```text
+/api/chat
+```
+
+---
+
+## Agent
+
+The Agent is responsible for managing conversation state and providing access to the tool system.
+
+Conceptually:
+
+```text
+User Input
+    │
+    ▼
+Conversation History
+    │
+    ▼
+Provider
+    │
+    ▼
+Model Response
+    │
+    ├── Text ───────► User
+    │
+    └── Tool Call
+            │
+            ▼
+       Tool Registry
+            │
+            ▼
+       Tool Execution
+            │
+            ▼
+       Tool Result
+            │
+            ▼
+         Provider
+            │
+            ▼
+      Final Response
+```
+
+The Agent is provider-neutral and operates through the Provider and Tool abstractions.
+
+When a Session is assigned, the Session becomes the source of conversation messages.
+
+---
+
+## Orchestrator
+
+The Orchestrator coordinates the Agent execution loop.
+
+It handles repeated model/tool interactions until:
+
+* The model produces a final response
+* The maximum tool-call limit is reached
+* An error occurs
+
+The maximum number of tool-call iterations can be configured.
+
+This prevents an Agent from entering an uncontrolled tool execution loop.
+
+---
+
+# Tool System
+
+## Tool Interface
+
+Tools expose a common interface containing:
 
 * Name
 * Description
-* Execution method
-* JSON Schema parameter definition
+* Execute
+* Schema
 
-MCP tools can also be registered after being converted through the MCP `ToolAdapter`.
+This allows different tool implementations to be treated uniformly.
 
-### MCP
+The same abstraction can represent native tools and adapted MCP tools.
 
-The `internal/mcp` package provides Model Context Protocol integration.
+---
 
-MCP allows Agent Harness to communicate with external MCP servers and use tools provided by those servers.
+## Tool Registry
 
-The MCP client currently provides the following functionality.
+The registry manages all available tools.
 
-#### `NewClient`
-
-Creates an Agent Harness MCP client backed by the official MCP SDK.
-
-The client identifies itself to MCP servers using the Agent Harness implementation name and version.
-
-```go
-client := mcp.NewClient()
-```
-
-#### `Connect`
-
-Connects the MCP client to an MCP server using an SDK transport and returns an active `ClientSession`.
-
-```go
-session, err := client.Connect(ctx, transport)
-```
-
-The transport determines how communication takes place. The current abstraction accepts any MCP SDK `Transport`, allowing transports such as in-memory or command-based transports to be used without changing the Agent Harness client API.
-
-#### `ListTools`
-
-Requests the available tools from an MCP server through an active client session.
-
-```go
-tools, err := client.ListTools(ctx, session)
-```
-
-The method returns the MCP SDK tool definitions discovered from the server.
-
-#### `NewTool`
-
-Wraps an MCP SDK tool in the Agent Harness MCP tool abstraction.
-
-```go
-tool := mcp.NewTool(toolDefinition)
-```
-
-The wrapper keeps the MCP tool definition locally while allowing execution through the associated MCP session.
-
-#### `Name`
-
-Returns the name provided by the MCP server for the wrapped tool.
-
-```go
-name := tool.Name()
-```
-
-#### `Description`
-
-Returns the description provided by the MCP server for the wrapped tool.
-
-```go
-description := tool.Description()
-```
-
-#### `Schema`
-
-Returns the MCP tool's input schema in the native `map[string]any` representation used by Agent Harness.
-
-```go
-schema := tool.Schema()
-```
-
-#### `Execute`
-
-Forwards a tool execution request to the MCP server through the active client session.
-
-```go
-result, err := tool.Execute(ctx, session, args)
-```
-
-The method accepts:
-
-* `context.Context` for operation lifecycle, cancellation, and deadlines
-* An active MCP `ClientSession`
-* `map[string]any` containing the tool-specific arguments
-
-The MCP server executes the requested operation and returns an MCP `CallToolResult`.
-
-### MCP Tool Adapter
-
-The `ToolAdapter` provides the boundary between MCP tools and the existing Agent Harness tool interface.
-
-```go
-adapter := mcp.NewToolAdapter(ctx, tool, session)
-```
-
-The adapter implements the native:
-
-```go
-tools.Tool
-```
-
-interface.
-
-It forwards:
-
-* `Name()`
-* `Description()`
-* `Schema()`
-* `Execute()`
-
-to the underlying MCP tool while retaining the MCP session and execution context.
-
-This allows MCP tools to be registered in the same Tool Registry as native tools without making the native tool system depend directly on MCP.
-
-### MCP Tool Registration
-
-Discovered MCP tools can be registered with the existing Tool Registry through:
-
-```go
-err := mcp.RegisterTools(ctx, session, registry)
-```
-
-The registration process:
-
-1. Lists available MCP tools.
-2. Creates an Agent Harness MCP tool wrapper for each tool.
-3. Creates a `ToolAdapter` for each wrapper.
-4. Registers each adapter with the Tool Registry.
-
-This provides a unified tool boundary:
+It supports:
 
 ```text
-                 Tool Registry
-                      |
-          +-----------+-----------+
-          |                       |
-          v                       v
-     Native Tools            MCP Adapters
-          |                       |
-          |                       v
-          |                  MCP Tools
-          |                       |
-          |                  MCP Server
-          |
-          v
-        Agent
+Register
+Get
+Has
+List
+Remove
+Schemas
 ```
 
-MCP is therefore an extension of the existing tool architecture rather than a separate execution path.
+This provides a central mechanism for native tools and externally discovered tools.
+
+---
 
 ## Built-in Tools
 
 ### Calculator
 
-Performs:
+The calculator supports:
 
-* `add`
-* `subtract`
-* `multiply`
-* `divide`
-* `modulus`
+```text
+add
+subtract
+multiply
+divide
+modulus
+```
 
-over numeric arrays.
+Example:
 
-### Filesystem
+```text
+10 + 20
+```
 
-Supports:
+Result:
 
-* `read`
-* `write`
-* `list`
-* `search`
-* `exists`
-* `delete`
+```text
+30
+```
+
+---
 
 ### Shell
 
-Executes an available operating-system command with optional string arguments and returns combined output.
+The Shell tool allows command execution through the tool system.
 
-The tools operate on the local machine and should be used with appropriate care.
+It is intended for controlled local Agent workflows.
 
-## CLI Usage
+---
 
-The CLI entry point is:
+### Filesystem
+
+The Filesystem tool provides filesystem-related operations through the common Tool interface.
+
+---
+
+# MCP
+
+The project uses the official Go MCP SDK for MCP integration.
+
+The MCP layer provides:
+
+```text
+MCP Client
+     │
+     ▼
+Connect to Server
+     │
+     ▼
+List Tools
+     │
+     ▼
+Convert MCP Tools
+     │
+     ▼
+Native Tool Interface
+     │
+     ▼
+Tool Registry
+```
+
+MCP tools are adapted into the existing `tools.Tool` interface so the Agent does not need a separate execution mechanism for MCP tools.
+
+---
+
+## MCP Client
+
+The MCP client is responsible for:
+
+* Connecting to an MCP server
+* Managing the MCP session
+* Discovering tools
+* Returning discovered tools
+
+The client can discover MCP tools through `ListTools`.
+
+---
+
+## MCP Tool
+
+An MCP tool exposes information such as:
+
+```text
+Name
+Description
+Schema
+```
+
+The MCP tool wrapper also implements the native Tool interface.
+
+This allows an MCP tool to be executed by the existing Agent tool system.
+
+---
+
+## MCP Tool Adapter
+
+The MCP adapter bridges the MCP SDK and the native Tool interface.
+
+Conceptually:
+
+```text
+MCP SDK Tool
+     │
+     ▼
+Tool Adapter
+     │
+     ▼
+tools.Tool
+     │
+     ▼
+Tool Registry
+     │
+     ▼
+Agent
+```
+
+This keeps MCP-specific implementation details isolated from the Agent.
+
+---
+
+## MCP Tool Registration
+
+Discovered MCP tools can be adapted and registered into the existing Tool Registry.
+
+This means the Agent can treat:
+
+```text
+Built-in Tool
+MCP Tool
+Future External Tool
+```
+
+as the same general tool type.
+
+---
+
+# CLI Usage
+
+The interactive CLI is located in:
+
+```text
+cmd/
+```
+
+Run it with:
 
 ```bash
 go run ./cmd
 ```
 
-The CLI loads `config/config.json` (or `../config/config.json` when run from a nested working directory) and provides an interactive Ollama terminal interface. The current default model is `kirito1/qwen3-coder:4b` when no model is configured and `OLLAMA_MODEL` is not set.
+The CLI starts with a default active session:
 
-Before starting the CLI, make sure Ollama is running. The CLI discovers local Ollama models. If the selected model is not installed, it allows you to explicitly pull that model, select an installed model, or quit. It does not silently download or replace a model, and empty input is ignored.
+```text
+default
+```
 
-Current commands include:
+The current session ID can be displayed with the `session` command.
+
+---
+
+## CLI Commands
+
+| Command               | Description                            |
+| --------------------- | -------------------------------------- |
+| `help`                | Show available commands                |
+| `model`               | Show the currently configured model    |
+| `session`             | Show the current session ID            |
+| `session create <id>` | Create a new session                   |
+| `session list`        | List stored sessions                   |
+| `session load <id>`   | Load and activate a stored session     |
+| `session delete <id>` | Delete a stored session                |
+| `clear`               | Clear the current conversation history |
+| `exit`                | Exit the CLI                           |
+
+---
+
+## `help`
+
+Displays the available CLI commands.
 
 ```text
 help
+```
+
+---
+
+## `model`
+
+Displays the currently configured model.
+
+```text
 model
+```
+
+The model can also be overridden through:
+
+```bash
+export OLLAMA_MODEL=your-model
+```
+
+---
+
+## `session`
+
+Displays the currently active session ID.
+
+```text
+session
+```
+
+Example:
+
+```text
+Current session: default
+```
+
+---
+
+## `session create`
+
+Creates a new session and stores it in the active Session Store.
+
+```text
+session create project-a
+```
+
+Example:
+
+```text
+Session created: project-a
+```
+
+---
+
+## `session list`
+
+Lists the sessions currently stored in the active Session Store.
+
+```text
+session list
+```
+
+Example:
+
+```text
+Sessions:
+- default
+- project-a
+- project-b
+```
+
+---
+
+## `session load`
+
+Loads an existing session and makes it the active session.
+
+```text
+session load project-a
+```
+
+Example:
+
+```text
+Session loaded: project-a
+```
+
+The Agent is updated to use the loaded session.
+
+---
+
+## `session delete`
+
+Deletes a stored session.
+
+```text
+session delete project-a
+```
+
+The CLI prevents deletion of the currently active session.
+
+---
+
+## `clear`
+
+Clears the current Agent conversation history.
+
+```text
 clear
+```
+
+This affects the active conversation history.
+
+It does not delete the Session itself.
+
+---
+
+## `exit`
+
+Exits the CLI.
+
+```text
 exit
 ```
 
-Any other input is treated as a chat request.
+---
 
-The `model` command displays the active model and its source, such as `environment`, `config`, `default`, `local-selection`, or `pulled`.
+# Ollama Setup
 
-The active Ollama model can be overridden for the current run with `OLLAMA_MODEL`:
+Install and start Ollama before running Agent Harness.
 
-```bash
-OLLAMA_MODEL="your-model-name" go run ./cmd
-```
-
-The CLI does not provide credential-management commands. Credential storage is handled separately from provider configuration.
-
-## Ollama Setup
-
-Start Ollama before running the CLI:
+Start the Ollama server:
 
 ```bash
 ollama serve
 ```
 
-The CLI reads provider configuration from:
-
-```text
-config/config.json
-```
-
-The configuration must contain the following JSON fields:
-
-```json
-{
-  "provider": {
-    "name": "ollama",
-    "model": "llama3.1",
-    "base_url": "http://localhost:11434",
-    "endpoint": "/api/chat"
-  }
-}
-```
-
-`config/config.example.json` is included as the example-file location, but the CLI does not load it automatically.
-
-If the configured model is not installed, the CLI can offer an explicit pull option or allow selection of an installed local model.
-
-It does not silently download or change the configured model.
-
-## Credentials
-
-Credentials are stored separately from provider configuration.
-
-The credential store is located at:
-
-```text
-~/.agent-harness/credentials.json
-```
-
-The credentials layer currently provides:
-
-* **Set** — stores or updates a provider credential.
-* **Get** — retrieves a provider credential.
-* **Delete** — removes a provider credential.
-
-Provider configuration does not contain API keys or other credentials.
-
-## Testing
-
-Run all tests from the repository root:
+Verify available models:
 
 ```bash
-go test ./...
+ollama list
 ```
 
-Run static checks:
+Pull a model if required:
 
 ```bash
-go vet ./...
+ollama pull llama3.1
 ```
 
-## Continuous Integration
-
-GitHub Actions runs the Go CI workflow for pushes to `main` and `feature/**`, and for pull requests targeting `main`. The workflow:
-
-* Checks that all Go files are formatted with `gofmt`.
-* Runs `go test ./...`.
-* Runs `go vet ./...`.
-
-The workflow does not set `OLLAMA_INTEGRATION=1` or `ORCHESTRATOR_INTEGRATION=1`, so Ollama integration tests are intentionally skipped by CI.
-
-Format the project with:
-
-```bash
-gofmt -w $(find . -name '*.go')
-```
-
-The project contains unit and integration-style tests covering:
-
-* Provider configuration and behavior
-* Credential Set/Get/Delete operations
-* Tool Registry operations
-* Calculator execution
-* Filesystem operations
-* Shell execution
-* Agent tool execution
-* Agent conversation history
-* Orchestrator execution
-* Native tool calls
-* Multiple native tool calls
-* Tool-call failure handling
-* Maximum tool-call protection
-* MCP client creation
-* MCP client connection
-* MCP tool discovery
-* MCP tool wrapper creation
-* MCP tool name and description access
-* MCP tool schema access
-* MCP tool execution
-* MCP Tool Adapter creation
-* MCP Tool Adapter name and description access
-* MCP Tool Adapter schema access
-* MCP Tool Adapter execution
-* MCP tool registration with the Tool Registry
-* Agent execution of MCP tools
-* Orchestrator execution of MCP tools
-
-The MCP tests use the SDK's in-memory transport, allowing client/server communication to be tested without requiring an external MCP server.
-
-The orchestrator integration test is opt-in and requires a running Ollama service and an available configured model:
-
-```bash
-ORCHESTRATOR_INTEGRATION=1 go test -run TestOrchestratorRunAgent_Integration ./internal/orchestrator -v
-```
-
-The provider integration test is also opt-in:
-
-```bash
-OLLAMA_INTEGRATION=1 go test -run TestOllamaProvider_Integration ./internal/provider -v
-```
-
-## End-to-End Example
-
-With Ollama running and a model available:
+The Agent Harness can then be started with:
 
 ```bash
 go run ./cmd
 ```
 
-Then enter:
+---
 
-```text
-Calculate 12 multiplied by 7.
+## Model Override
+
+The model can be overridden using the environment variable:
+
+```bash
+export OLLAMA_MODEL=llama3.1
 ```
 
-The Provider can return a native calculator tool call.
+This is useful for testing different local models without changing the configuration file.
 
-The Orchestrator passes the call to the Agent.
+---
 
-The Agent resolves `calculator` through the Tool Registry.
+# Testing
 
-The Calculator executes the operation.
+The project uses Go's standard testing framework.
 
-The result is added to the conversation and sent back to the Provider.
+Run all tests from the project root:
 
-The Provider then produces the final response.
+```bash
+go test ./...
+```
 
-For MCP tools, the same Tool Registry boundary can be used:
+Run tests with verbose output:
+
+```bash
+go test -v ./...
+```
+
+The CLI package can also be tested directly:
+
+```bash
+go test ./cmd
+```
+
+---
+
+## Integration Testing
+
+The Ollama Orchestrator integration test can be enabled with:
+
+```bash
+ORCHESTRATOR_INTEGRATION=1 go test ./...
+```
+
+The integration test requires:
+
+* Ollama running locally
+* A compatible model available
+* The configured model supporting the required tool-calling behavior
+
+---
+
+# Formatting
+
+Format Go files with:
+
+```bash
+gofmt -w $(find . -name '*.go')
+```
+
+Verify formatting with:
+
+```bash
+gofmt -l $(find . -name '*.go')
+```
+
+The second command should produce no output when all Go files are formatted.
+
+---
+
+# Static Analysis
+
+Run Go vet with:
+
+```bash
+go vet ./...
+```
+
+The expected result is no reported issues.
+
+---
+
+# Continuous Integration
+
+GitHub Actions is used to automate project validation.
+
+The CI workflow runs project checks such as:
 
 ```text
-Provider
-   |
-   v
-Orchestrator
-   |
-   v
+go test
+go vet
+```
+
+The workflow is intended to validate changes on the repository's configured branches and pull requests.
+
+---
+
+# End-to-End Example
+
+A simplified native tool execution looks like this:
+
+```text
+User
+ │
+ │ "What is 10 + 20?"
+ ▼
+CLI
+ │
+ ▼
 Agent
-   |
-   v
+ │
+ ▼
+Ollama Provider
+ │
+ ▼
+Local Model
+ │
+ │ Tool Call
+ ▼
 Tool Registry
-   |
-   v
-ToolAdapter
-   |
-   v
-MCP Tool
-   |
-   v
-MCP Server
+ │
+ ▼
+Calculator
+ │
+ │ 10 + 20
+ ▼
+30
+ │
+ ▼
+Agent
+ │
+ ▼
+Ollama Provider
+ │
+ ▼
+Final Response
+ │
+ ▼
+CLI
 ```
 
-The MCP server performs the requested operation and returns the result through the active MCP session.
+A simplified MCP tool execution looks like this:
 
-## Architectural Principles
+```text
+User
+ │
+ ▼
+Agent
+ │
+ ▼
+Ollama
+ │
+ │ Tool Call
+ ▼
+Tool Registry
+ │
+ ▼
+MCP Adapter
+ │
+ ▼
+MCP Client
+ │
+ ▼
+MCP Server
+ │
+ ▼
+Tool Result
+ │
+ ▼
+Agent
+ │
+ ▼
+Final Response
+```
 
-### Separation of Concerns
+A simplified session-aware flow looks like this:
 
-Provider communication, coordination, tool access, registry management, credential storage, MCP communication, and concrete operations remain separate.
+```text
+User
+ │
+ ▼
+CLI
+ │
+ ▼
+Active Session
+ │
+ ├── ID
+ └── Messages
+ │
+ ▼
+Agent
+ │
+ ▼
+Provider
+ │
+ ▼
+Tool Execution
+ │
+ ▼
+Updated Session Messages
+ │
+ ▼
+Session Store
+ │
+ ▼
+Persistent Storage
+```
 
-### Provider-Neutral Contracts
+---
 
-The Agent and Orchestrator use shared message and tool-call types rather than provider-specific response structures.
+# Architectural Principles
 
-### Unified Tool Boundary
+## Provider Neutrality
 
-Native tools and MCP tools enter the Agent through the same `tools.Tool` interface and Tool Registry.
+The Agent should not depend directly on Ollama-specific APIs.
 
-MCP-specific communication remains isolated inside the MCP package and its adapter layer.
+Provider-specific behavior belongs behind the Provider interface.
 
-### Explicit Tool Boundaries
+---
 
-Every registered tool implements the same interface and publishes its JSON Schema.
+## Tool Agnosticism
 
-Native tools implement the interface directly, while MCP tools use `ToolAdapter` to satisfy the same contract.
+The Agent should not need to know whether a tool is:
 
-### Bounded Execution
+* Built into the project
+* Provided by an MCP server
+* Added by another future integration
 
-`WithMaxToolCalls` prevents an unbounded tool-execution loop.
+All tools should be exposed through the common Tool abstraction.
 
-### In-Memory State
+---
 
-Conversation history belongs to the Agent and is not persisted between process runs.
+## Session Independence
 
-### Local-First Operation
+Session storage is separated from the Agent runtime.
 
-The current fully integrated provider is Ollama, allowing the runtime to operate against a local LLM.
+This allows different storage implementations to be introduced without requiring major changes to Agent execution.
 
-### Extensible Architecture
+Potential session backends include:
 
-Provider implementations, native tools, MCP servers, and credential storage can be extended without requiring the core Agent and Orchestrator architecture to be rewritten.
+```text
+In-Memory
+File
+Database
+Remote Storage
+```
 
-## Implementation Status
+---
 
-| Component                                        | Status      |
-| ------------------------------------------------ | ----------- |
-| Configuration loading and validation             | Implemented |
-| Provider abstraction                             | Implemented |
-| Ollama chat and native tool calling              | Implemented |
-| Local model discovery and pulling                | Implemented |
-| Local model presence checks                      | Implemented |
-| Provider-neutral message and tool types          | Implemented |
-| Agent tool access and conversation history       | Implemented |
-| Tool Registry and JSON Schema exposure           | Implemented |
-| Calculator, filesystem, and shell tools          | Implemented |
-| Filesystem recursive search                      | Implemented |
-| Orchestrator agent loop and tool-result feedback | Implemented |
-| Multiple native tool calls per provider response | Implemented |
-| Maximum tool-call protection                     | Implemented |
-| Interactive CLI                                  | Implemented |
-| GitHub Actions formatting, test, and vet checks  | Implemented |
-| Credential abstraction                           | Implemented |
-| Local file credential store                      | Implemented |
-| Credential Set/Get/Delete operations             | Implemented |
-| MCP client creation                              | Implemented |
-| MCP server connection                            | Implemented |
-| MCP tool discovery                               | Implemented |
-| MCP tool wrapper                                 | Implemented |
-| MCP tool name and description access             | Implemented |
-| MCP tool schema access                           | Implemented |
-| MCP tool execution                               | Implemented |
-| MCP ToolAdapter                                  | Implemented |
-| MCP integration with Tool Registry               | Implemented |
-| Agent MCP tool execution                         | Implemented |
-| Orchestrator MCP tool execution                  | Implemented |
-| Unit and integration tests                       | Implemented |
+## Separation of Concerns
 
-## Roadmap
+The project separates:
 
-The following are planned extensions:
+```text
+Configuration
+Credentials
+Sessions
+Providers
+Agent
+Orchestration
+Tools
+MCP
+CLI
+```
 
-* Broader MCP session lifecycle and transport management
-* Additional LLM provider implementations
-* CLI credential management commands
-* CLI MCP server configuration and registration
-* Persistent sessions and conversation storage
-* Information-retrieval tools
-* Additional native and MCP tools
-* Improved CLI experience and configuration management
-* Streaming provider responses
-* Better error reporting and observability
-* Additional deployment options
+Each subsystem has a focused responsibility.
+
+---
+
+## Local First
+
+The current implementation is designed to work with local models through Ollama.
+
+This allows development and testing without requiring a hosted model API.
+
+---
+
+## Extensibility
+
+The architecture is designed so new capabilities can be added without rewriting the Agent core.
+
+Potential future extensions include:
+
+```text
+Additional Providers
+
+Additional Tool Sources
+
+Additional Credential Backends
+
+Additional Session Backends
+
+Remote MCP Servers
+
+Database-backed Sessions
+
+Session Metadata
+
+Session Export and Import
+```
+
+---
+
+# Implementation Status
+
+| Component                             | Status      |
+| ------------------------------------- | ----------- |
+| Go project structure                  | Implemented |
+| Provider abstraction                  | Implemented |
+| Ollama provider                       | Implemented |
+| Conversation history                  | Implemented |
+| Agent runtime                         | Implemented |
+| Session-aware Agent runtime           | Implemented |
+| Tool abstraction                      | Implemented |
+| Tool registry                         | Implemented |
+| Calculator tool                       | Implemented |
+| Shell tool                            | Implemented |
+| Filesystem tool                       | Implemented |
+| MCP client                            | Implemented |
+| MCP tool discovery                    | Implemented |
+| MCP tool adapter                      | Implemented |
+| MCP tool registration foundation      | Implemented |
+| Credential abstraction                | Implemented |
+| Credential storage                    | Implemented |
+| Session abstraction                   | Implemented |
+| Session message storage               | Implemented |
+| In-memory session store               | Implemented |
+| File-based session store              | Implemented |
+| Interactive CLI                       | Implemented |
+| CLI model command                     | Implemented |
+| CLI session display                   | Implemented |
+| CLI conversation clearing             | Implemented |
+| CLI session creation                  | Implemented |
+| CLI session listing                   | Implemented |
+| CLI session loading                   | Implemented |
+| CLI session deletion                  | Implemented |
+| Persistent Agent conversation history | Implemented |
+| Automatic session persistence         | Implemented |
+| Default session restoration           | Implemented |
+| Database-backed sessions              | Planned     |
+| Additional providers                  | Planned     |
+| Expanded MCP functionality            | Planned     |
+
+---
+
+# Roadmap
+
+## Improved Session Management
+
+Future session improvements include:
+
+```text
+Database-backed Sessions
+
+Session Metadata
+
+Session Timestamps
+
+Session Renaming
+
+Session Export
+
+Session Import
+
+Improved Persistence Synchronization
+```
+
+---
+
+## Improved MCP Support
+
+Future MCP work includes:
+
+* CLI configuration of MCP servers
+* MCP server lifecycle management
+* Dynamic MCP server registration
+* Better error handling
+* More complete MCP resource support
+* MCP prompts
+* MCP sampling where applicable
+
+---
+
+## Additional Providers
+
+The provider abstraction allows future integrations such as:
+
+```text
+OpenAI-compatible APIs
+
+Anthropic
+
+Google
+
+Other Local Model Runtimes
+```
+
+Provider implementations can be added without changing the core Agent architecture.
+
+---
+
+## Improved CLI
+
+Planned CLI improvements include:
+
+```text
+Provider Management
+
+Tool Listing
+
+MCP Server Management
+
+Configuration Inspection
+
+Advanced Model Management
+
+Persistent Session Selection
+
+Interactive Tool Inspection
+```
+
+---
+
+# Development Workflow
+
+A typical development workflow is:
+
+```bash
+git checkout -b feature/<name>
+```
+
+Make the required changes and run:
+
+```bash
+gofmt -w $(find . -name '*.go')
+go test ./...
+go vet ./...
+```
+
+Then review the changes:
+
+```bash
+git status
+git diff
+```
+
+Commit the completed logical change:
+
+```bash
+git add .
+git commit -m "your commit message"
+```
+
+Push the feature branch:
+
+```bash
+git push -u origin feature/<name>
+```
+
+Then open a pull request against the appropriate base branch.
+
+---
+
+# Project Goals
+
+The long-term goal of Agent Harness is to provide a modular runtime for building tool-using AI agents while keeping the underlying architecture understandable, testable, and extensible.
+
+The project focuses on:
+
+```text
+Provider Abstraction
+
+        +
+
+Agent Runtime
+
+        +
+
+Tool Execution
+
+        +
+
+MCP
+
+        +
+
+Credentials
+
+        +
+
+Sessions
+
+        +
+
+CLI
+```
+
+The architecture is intentionally built incrementally so each subsystem can be tested independently before being connected to the larger runtime.
+
+The project is designed to evolve toward a more complete agent runtime while maintaining clear boundaries between providers, tools, sessions, credentials, MCP, and the CLI.
+
+---
+
+# License
+
+This project is licensed under the MIT License.
+
+See the [LICENSE](LICENSE) file for the full license text.

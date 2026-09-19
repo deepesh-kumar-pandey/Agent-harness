@@ -36,4 +36,8 @@ temp/
 # Local MCP / development files
 *.log
 
+# Local session data
+.sessions/
+
+# Local configuration
 config/config.json

@@ -4,12 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"agent-harness/internal/mcp"
-	"agent-harness/internal/tools"
+	mcppkg "agent-harness/internal/mcp"
+	providerpkg "agent-harness/internal/provider"
+	sessionpkg "agent-harness/internal/session"
+	toolspkg "agent-harness/internal/tools"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// TestNewAgent verifies that an agent is created with the provided registry.
 func TestNewAgent(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -21,7 +24,7 @@ func TestNewAgent(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			registry := tools.NewToolRegistry()
+			registry := toolspkg.NewToolRegistry()
 
 			agent := NewAgent(registry)
 
@@ -39,6 +42,113 @@ func TestNewAgent(t *testing.T) {
 	}
 }
 
+// TestAgentSetSession verifies that an agent can attach a session.
+func TestAgentSetSession(t *testing.T) {
+	testCases := []struct {
+		name        string
+		session     *sessionpkg.Session
+		expectError bool
+	}{
+		{
+			name:        "sets session",
+			session:     sessionpkg.NewSession("test-session"),
+			expectError: false,
+		},
+		{
+			name:        "rejects nil session",
+			session:     nil,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := toolspkg.NewToolRegistry()
+			agent := NewAgent(registry)
+
+			err := agent.SetSession(testCase.session)
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			if agent.session != testCase.session {
+				t.Fatal("expected agent session to match provided session")
+			}
+		})
+	}
+}
+
+// TestAgentSessionMessages verifies that messages are stored in the active session.
+func TestAgentSessionMessages(t *testing.T) {
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "stores messages in session",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := toolspkg.NewToolRegistry()
+			agent := NewAgent(registry)
+			session := sessionpkg.NewSession("test-session")
+
+			if err := agent.SetSession(session); err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			message := providerpkg.Message{
+				Role:    "user",
+				Content: "Hello",
+			}
+
+			if err := agent.AddMessage(message); err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			messages := agent.GetMessages()
+
+			if len(messages) != 1 {
+				t.Fatalf("expected 1 message, got %d", len(messages))
+			}
+
+			if messages[0].Role != "user" {
+				t.Errorf(
+					"expected role %q, got %q",
+					"user",
+					messages[0].Role,
+				)
+			}
+
+			if messages[0].Content != "Hello" {
+				t.Errorf(
+					"expected content %q, got %q",
+					"Hello",
+					messages[0].Content,
+				)
+			}
+
+			if len(session.Messages) != 1 {
+				t.Fatalf(
+					"expected session to contain 1 message, got %d",
+					len(session.Messages),
+				)
+			}
+		})
+	}
+}
+
+// TestExecuteTool verifies that registered tools can be executed.
 func TestExecuteTool(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -88,7 +198,7 @@ func TestExecuteTool(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			registry := tools.NewToolRegistry()
+			registry := toolspkg.NewToolRegistry()
 
 			agent := NewAgent(registry)
 
@@ -135,6 +245,7 @@ func TestExecuteTool(t *testing.T) {
 	}
 }
 
+// TestRun verifies that the agent Run method executes registered tools.
 func TestRun(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -143,9 +254,6 @@ func TestRun(t *testing.T) {
 		expected    any
 		expectError bool
 	}{
-		// ─────────────────────────────────────
-		// Calculator
-		// ─────────────────────────────────────
 		{
 			name:     "Run calculator",
 			toolName: "calculator",
@@ -156,10 +264,6 @@ func TestRun(t *testing.T) {
 			expected:    float64(30),
 			expectError: false,
 		},
-
-		// ─────────────────────────────────────
-		// Shell
-		// ─────────────────────────────────────
 		{
 			name:     "Run shell",
 			toolName: "shell",
@@ -170,10 +274,6 @@ func TestRun(t *testing.T) {
 			expected:    "hello\n",
 			expectError: false,
 		},
-
-		// ─────────────────────────────────────
-		// Error case
-		// ─────────────────────────────────────
 		{
 			name:        "Run unknown tool",
 			toolName:    "unknown",
@@ -183,25 +283,16 @@ func TestRun(t *testing.T) {
 		},
 	}
 
-	// ─────────────────────────────────────────
-	// Execute test cases
-	// ─────────────────────────────────────────
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-
-			// Create registry and agent
-			registry := tools.NewToolRegistry()
+			registry := toolspkg.NewToolRegistry()
 			agent := NewAgent(registry)
 
-			// Run the requested tool
 			result, err := agent.Run(
 				testCase.toolName,
 				testCase.args,
 			)
 
-			// ────────────────
-			// Expected error
-			// ────────────────
 			if testCase.expectError {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -217,9 +308,6 @@ func TestRun(t *testing.T) {
 				return
 			}
 
-			// ────────────────
-			// Unexpected error
-			// ────────────────
 			if err != nil {
 				t.Fatalf(
 					"unexpected error: %v",
@@ -227,9 +315,6 @@ func TestRun(t *testing.T) {
 				)
 			}
 
-			// ────────────────
-			// Validate result
-			// ────────────────
 			if result != testCase.expected {
 				t.Fatalf(
 					"expected %v, got %v",
@@ -241,16 +326,17 @@ func TestRun(t *testing.T) {
 	}
 }
 
+// TestAgentGetToolSchemas verifies that the agent returns tool schemas.
 func TestAgentGetToolSchemas(t *testing.T) {
 	testCases := []struct {
 		name          string
-		registry      *tools.ToolRegistry
+		registry      *toolspkg.ToolRegistry
 		expectError   bool
 		expectedCount int
 	}{
 		{
 			name:          "Get registered tool schemas",
-			registry:      tools.NewToolRegistry(),
+			registry:      toolspkg.NewToolRegistry(),
 			expectError:   false,
 			expectedCount: 3,
 		},
@@ -294,9 +380,7 @@ func TestAgentGetToolSchemas(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────
-// MCP Tool Execution
-// ─────────────────────────────────────────
+// TestAgentRunMCPTool verifies that MCP tools can be executed by the agent.
 func TestAgentRunMCPTool(t *testing.T) {
 	ctx := context.Background()
 
@@ -338,7 +422,7 @@ func TestAgentRunMCPTool(t *testing.T) {
 		t.Fatalf("failed to connect MCP server: %v", err)
 	}
 
-	client := mcp.NewClient()
+	client := mcppkg.NewClient()
 
 	clientSession, err := client.Connect(ctx, clientTransport)
 	if err != nil {
@@ -348,9 +432,9 @@ func TestAgentRunMCPTool(t *testing.T) {
 	defer clientSession.Close()
 	defer serverSession.Close()
 
-	registry := tools.NewToolRegistry()
+	registry := toolspkg.NewToolRegistry()
 
-	err = mcp.RegisterTools(
+	err = mcppkg.RegisterTools(
 		ctx,
 		clientSession,
 		registry,

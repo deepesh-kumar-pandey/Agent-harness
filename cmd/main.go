@@ -12,6 +12,7 @@ import (
 	agentpkg "agent-harness/internal/agent"
 	orchestratorpkg "agent-harness/internal/orchestrator"
 	providerpkg "agent-harness/internal/provider"
+	sessionpkg "agent-harness/internal/session"
 	toolspkg "agent-harness/internal/tools"
 )
 
@@ -176,12 +177,6 @@ func containsModel(models []string, target string) bool {
 	return false
 }
 
-// clearTerminal clears the terminal screen.
-//
-// output is the destination where the terminal escape sequence is written.
-//
-// \033[H moves the cursor to the top-left of the terminal.
-// \033[2J clears the terminal screen.
 func clearTerminal(output io.Writer) {
 	fmt.Fprint(output, "\033[H\033[2J")
 }
@@ -190,11 +185,23 @@ func handleCommand(
 	input string,
 	model string,
 	modelSource string,
+	currentSession **sessionpkg.Session,
+	sessionStore sessionpkg.Store,
+	agentClient *agentpkg.Agent,
 	output io.Writer,
 ) CommandResult {
-	switch input {
+	parts := strings.Fields(input)
+
+	if len(parts) == 0 {
+		return CommandNotHandled
+	}
+
+	switch parts[0] {
 	case "help":
-		fmt.Fprintln(output, "Available commands: help, exit, model, clear")
+		fmt.Fprintln(
+			output,
+			"Available commands: help, exit, model, session, clear",
+		)
 		return CommandHandled
 
 	case "model":
@@ -205,6 +212,121 @@ func handleCommand(
 			modelSource,
 		)
 		return CommandHandled
+
+	case "session":
+		if len(parts) == 1 {
+			fmt.Fprintf(
+				output,
+				"Current session: %s\n",
+				(*currentSession).ID,
+			)
+			return CommandHandled
+		}
+
+		switch parts[1] {
+		case "load":
+			if len(parts) != 3 {
+				fmt.Fprintln(output, "Usage: session load <id>")
+				return CommandHandled
+			}
+
+			session, err := sessionStore.Get(parts[2])
+			if err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to load session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			if err := agentClient.SetSession(session); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to activate session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			*currentSession = session
+
+			fmt.Fprintf(
+				output,
+				"Loaded session: %s\n",
+				session.ID,
+			)
+
+			return CommandHandled
+
+		case "list":
+			sessions := sessionStore.List()
+
+			fmt.Fprintln(output, "Sessions:")
+
+			for _, session := range sessions {
+				fmt.Fprintf(output, "- %s\n", session.ID)
+			}
+
+			return CommandHandled
+
+		case "create":
+			if len(parts) != 3 {
+				fmt.Fprintln(output, "Usage: session create <id>")
+				return CommandHandled
+			}
+
+			session := sessionpkg.NewSession(parts[2])
+
+			if err := sessionStore.Set(session); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to create session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			fmt.Fprintf(
+				output,
+				"Created session: %s\n",
+				session.ID,
+			)
+
+			return CommandHandled
+
+		case "delete":
+			if len(parts) != 3 {
+				fmt.Fprintln(output, "Usage: session delete <id>")
+				return CommandHandled
+			}
+
+			if parts[2] == (*currentSession).ID {
+				fmt.Fprintln(output, "Cannot delete current session.")
+				return CommandHandled
+			}
+
+			if err := sessionStore.Delete(parts[2]); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to delete session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			fmt.Fprintf(
+				output,
+				"Deleted session: %s\n",
+				parts[2],
+			)
+
+			return CommandHandled
+
+		default:
+			fmt.Fprintln(output, "Unknown session command.")
+			return CommandHandled
+		}
 
 	case "clear":
 		clearTerminal(output)
@@ -251,10 +373,32 @@ func main() {
 		return
 	}
 
+	sessionStore := sessionpkg.NewFileSessionStore(".sessions")
+
+	currentSession, err := sessionStore.Get("default")
+	if err != nil {
+		currentSession = sessionpkg.NewSession("default")
+
+		if err := sessionStore.Set(currentSession); err != nil {
+			fmt.Println("Session error:", err)
+			return
+		}
+	}
+
+	if err := agentClient.SetSession(currentSession); err != nil {
+		fmt.Println("Session error:", err)
+		return
+	}
+
 	fmt.Printf(
 		"Agent Harness starting... using model: %s (source: %s)\n",
 		model,
 		modelSource,
+	)
+
+	fmt.Printf(
+		"Current session: %s\n",
+		currentSession.ID,
 	)
 
 	orchestratorClient := orchestratorpkg.NewOrchestrator(
@@ -281,6 +425,9 @@ func main() {
 			input,
 			model,
 			modelSource,
+			&currentSession,
+			sessionStore,
+			agentClient,
 			os.Stdout,
 		)
 
@@ -305,6 +452,11 @@ func main() {
 		response, err := orchestratorClient.RunAgent(request)
 		if err != nil {
 			fmt.Println("Error:", err)
+			continue
+		}
+
+		if err := sessionStore.Set(currentSession); err != nil {
+			fmt.Println("Session save error:", err)
 			continue
 		}
 

@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	agentpkg "agent-harness/internal/agent"
 	providerpkg "agent-harness/internal/provider"
+	sessionpkg "agent-harness/internal/session"
 )
 
 type fakeLocalProvider struct {
@@ -51,6 +53,7 @@ func (fakeCloudProvider) Chat(
 	return providerpkg.ChatResponse{}, nil
 }
 
+// Test for resolving the model using the environment variable.
 func TestResolveModelUsesEnvOverride(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "custom-model")
 
@@ -67,6 +70,7 @@ func TestResolveModelUsesEnvOverride(t *testing.T) {
 	}
 }
 
+// Test for resolving the model using the configuration.
 func TestResolveModelUsesConfigModel(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "")
 
@@ -83,6 +87,7 @@ func TestResolveModelUsesConfigModel(t *testing.T) {
 	}
 }
 
+// Test for resolving the default model.
 func TestResolveModelDefaultsToInstalledModel(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "")
 
@@ -99,6 +104,7 @@ func TestResolveModelDefaultsToInstalledModel(t *testing.T) {
 	}
 }
 
+// Test for selecting a local model.
 func TestSelectModel(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -137,8 +143,10 @@ func TestSelectModel(t *testing.T) {
 			expectOutput:   "Invalid choice",
 		},
 		{
-			name:           "Pulls configured model",
-			provider:       &fakeLocalProvider{},
+			name: "Pulls configured model",
+			provider: &fakeLocalProvider{
+				models: []string{},
+			},
 			configured:     "llama3.1",
 			input:          "p\n",
 			expected:       "llama3.1",
@@ -263,6 +271,7 @@ func TestSelectModel(t *testing.T) {
 	}
 }
 
+// Test for handling CLI commands.
 func TestHandleCommand(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -278,7 +287,7 @@ func TestHandleCommand(t *testing.T) {
 			model:          "test-model",
 			modelSource:    "test-source",
 			expectedResult: CommandHandled,
-			expectedOutput: "Available commands: help, exit, model, clear",
+			expectedOutput: "Available commands: help, exit, model, session, clear",
 		},
 		{
 			name:           "Model command",
@@ -287,6 +296,94 @@ func TestHandleCommand(t *testing.T) {
 			modelSource:    "test-source",
 			expectedResult: CommandHandled,
 			expectedOutput: "Current model : test-model\nSource: test-source",
+		},
+		{
+			name:           "Session command",
+			input:          "session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Current session: test-session",
+		},
+		{
+			name:           "Session list command",
+			input:          "session list",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Sessions:\n- test-session",
+		},
+		{
+			name:           "Session load command",
+			input:          "session load loaded-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Loaded session: loaded-session",
+		},
+		{
+			name:           "Session load command missing ID",
+			input:          "session load",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: session load <id>",
+		},
+		{
+			name:           "Session load command session not found",
+			input:          "session load missing-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Failed to load session: session not found: missing-session",
+		},
+		{
+			name:           "Session create command",
+			input:          "session create new-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Created session: new-session",
+		},
+		{
+			name:           "Session create command missing ID",
+			input:          "session create",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: session create <id>",
+		},
+		{
+			name:           "Session delete command",
+			input:          "session delete delete-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Deleted session: delete-session",
+		},
+		{
+			name:           "Session delete command missing ID",
+			input:          "session delete",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: session delete <id>",
+		},
+		{
+			name:           "Session delete current session",
+			input:          "session delete test-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Cannot delete current session.",
+		},
+		{
+			name:           "Session delete command session not found",
+			input:          "session delete missing-session",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Failed to delete session: session not found: missing-session",
 		},
 		{
 			name:           "Clear command",
@@ -316,10 +413,60 @@ func TestHandleCommand(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			var output strings.Builder
 
+			sessionStore := sessionpkg.NewSessionStore()
+			agentClient := agentpkg.NewAgent(nil)
+
+			currentSession := sessionpkg.NewSession("test-session")
+
+			err := sessionStore.Set(currentSession)
+			if err != nil {
+				t.Fatalf(
+					"expected no error while setting session, got %v",
+					err,
+				)
+			}
+
+			if testCase.input == "session load loaded-session" {
+				err := sessionStore.Set(
+					sessionpkg.NewSession("loaded-session"),
+				)
+
+				if err != nil {
+					t.Fatalf(
+						"expected no error while setting loaded session, got %v",
+						err,
+					)
+				}
+			}
+
+			if testCase.input == "session delete delete-session" {
+				err := sessionStore.Set(
+					sessionpkg.NewSession("delete-session"),
+				)
+
+				if err != nil {
+					t.Fatalf(
+						"expected no error while setting delete session, got %v",
+						err,
+					)
+				}
+			}
+
+			err = agentClient.SetSession(currentSession)
+			if err != nil {
+				t.Fatalf(
+					"expected no error while setting agent session, got %v",
+					err,
+				)
+			}
+
 			got := handleCommand(
 				testCase.input,
 				testCase.model,
 				testCase.modelSource,
+				&currentSession,
+				sessionStore,
+				agentClient,
 				&output,
 			)
 
@@ -339,10 +486,47 @@ func TestHandleCommand(t *testing.T) {
 					output.String(),
 				)
 			}
+
+			if testCase.input == "session create new-session" {
+				_, err := sessionStore.Get("new-session")
+
+				if err != nil {
+					t.Fatalf(
+						"expected new-session to exist in store, got error: %v",
+						err,
+					)
+				}
+			}
+
+			if testCase.input == "session load loaded-session" {
+				if currentSession.ID != "loaded-session" {
+					t.Fatalf(
+						"expected current session to be loaded-session, got %q",
+						currentSession.ID,
+					)
+				}
+
+				if agentClient.GetMessages() == nil {
+					t.Fatalf(
+						"expected agent to have active session",
+					)
+				}
+			}
+
+			if testCase.input == "session delete delete-session" {
+				_, err := sessionStore.Get("delete-session")
+
+				if err == nil {
+					t.Fatalf(
+						"expected delete-session to be removed from store",
+					)
+				}
+			}
 		})
 	}
 }
 
+// Test for clearing the terminal.
 func TestClearTerminal(t *testing.T) {
 	var output strings.Builder
 
@@ -359,6 +543,7 @@ func TestClearTerminal(t *testing.T) {
 	}
 }
 
+// Test for checking whether a model exists.
 func TestContainsModel(t *testing.T) {
 	testCases := []struct {
 		name     string
