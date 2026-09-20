@@ -9,6 +9,7 @@
 /bin/
 /build/
 /dist/
+/cmd/mcp-test-server/mcp-test-server
 
 # Go tooling and coverage output
 coverage.out
