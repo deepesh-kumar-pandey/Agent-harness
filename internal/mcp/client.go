@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"os/exec"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -27,6 +28,20 @@ func (c *Client) Connect(
 	transport mcpsdk.Transport,
 ) (*mcpsdk.ClientSession, error) {
 	return c.client.Connect(ctx, transport, nil)
+}
+
+func (c *Client) ConnectCommand(
+	ctx context.Context,
+	command string,
+	args []string,
+) (*mcpsdk.ClientSession, error) {
+	cmd := exec.CommandContext(ctx, command, args...)
+
+	transport := &mcpsdk.CommandTransport{
+		Command: cmd,
+	}
+
+	return c.Connect(ctx, transport)
 }
 
 func (c *Client) ListTools(
