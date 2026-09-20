@@ -1,0 +1,8 @@
+{
+  "provider": {
+    "name": "ollama",
+    "model": "kirito1/qwen3-coder:4b",
+    "base_url": "http://localhost:11434",
+    "endpoint": "/api/chat"
+  }
+}
