@@ -26,10 +26,12 @@ jobs:
         run: |
           test -z "$(gofmt -l .)"
 
+      - name: Build MCP test server
+        run: |
+          go build -o cmd/mcp-test-server/mcp-test-server ./cmd/mcp-test-server
+
       - name: Run tests
         run: go test ./...
 
       - name: Run vet
         run: go vet ./...
-
-        
