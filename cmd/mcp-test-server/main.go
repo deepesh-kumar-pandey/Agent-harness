@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,6 +34,21 @@ func main() {
 					},
 				},
 			}, nil, nil
+		},
+	)
+
+	mcpsdk.AddTool(
+		server,
+		&mcpsdk.Tool{
+			Name:        "error_tool",
+			Description: "A test tool that always returns an error",
+		},
+		func(
+			ctx context.Context,
+			req *mcpsdk.CallToolRequest,
+			args struct{},
+		) (*mcpsdk.CallToolResult, any, error) {
+			return nil, nil, fmt.Errorf("MCP test error")
 		},
 	)
 
