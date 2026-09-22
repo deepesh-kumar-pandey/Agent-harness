@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// Tests getting a tool from the registry.
 func TestToolRegistryGet(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -59,6 +60,7 @@ func TestToolRegistryGet(t *testing.T) {
 	}
 }
 
+// Tests creating a new tool registry with the default tools.
 func TestToolRegistryNew(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -92,6 +94,7 @@ func TestToolRegistryNew(t *testing.T) {
 	}
 }
 
+// Tests registering tools in the registry.
 func TestToolRegistryRegister(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -145,6 +148,29 @@ func TestToolRegistryRegister(t *testing.T) {
 	}
 }
 
+// Tests that duplicate tool names replace the existing tool.
+func TestToolRegistryDuplicateName(t *testing.T) {
+	registry := &ToolRegistry{
+		tools: make(map[string]Tool),
+	}
+
+	firstTool := &Calculator{}
+	secondTool := &ShellTool{}
+
+	registry.Register("duplicate", firstTool)
+	registry.Register("duplicate", secondTool)
+
+	tool, err := registry.Get("duplicate")
+	if err != nil {
+		t.Fatalf("expected duplicate tool to exist, got error: %v", err)
+	}
+
+	if tool != secondTool {
+		t.Fatal("expected duplicate registration to replace the existing tool")
+	}
+}
+
+// Tests checking whether a tool exists in the registry.
 func TestToolRegistryHas(t *testing.T) {
 	testCases := []struct {
 		name      string
@@ -184,6 +210,7 @@ func TestToolRegistryHas(t *testing.T) {
 	}
 }
 
+// Tests listing all registered tools.
 func TestToolRegistryList(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -226,6 +253,7 @@ func TestToolRegistryList(t *testing.T) {
 	}
 }
 
+// Tests removing a tool from the registry.
 func TestToolRegistryRemove(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -277,6 +305,7 @@ func TestToolRegistryRemove(t *testing.T) {
 	}
 }
 
+// Tests generating schemas for registered tools.
 func TestToolRegistrySchemas(t *testing.T) {
 	testCases := []struct {
 		name                string
