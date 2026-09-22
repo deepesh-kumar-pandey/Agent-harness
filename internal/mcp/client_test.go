@@ -128,12 +128,22 @@ func TestClientConnectCommand(t *testing.T) {
 		t.Fatalf("expected tool listing to succeed, got error: %v", err)
 	}
 
-	if len(tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(tools))
+	if len(tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(tools))
 	}
 
-	if tools[0].Name != "test_tool" {
-		t.Fatalf("expected tool name %q, got %q", "test_tool", tools[0].Name)
+	toolNames := make(map[string]bool)
+
+	for _, tool := range tools {
+		toolNames[tool.Name] = true
+	}
+
+	if !toolNames["test_tool"] {
+		t.Fatal("expected test_tool to be registered")
+	}
+
+	if !toolNames["error_tool"] {
+		t.Fatal("expected error_tool to be registered")
 	}
 
 	if err := session.Close(); err != nil {
