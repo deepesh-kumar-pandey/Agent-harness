@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	configpkg "agent-harness/config"
 	agentpkg "agent-harness/internal/agent"
+	mcppkg "agent-harness/internal/mcp"
 	orchestratorpkg "agent-harness/internal/orchestrator"
 	providerpkg "agent-harness/internal/provider"
 	sessionpkg "agent-harness/internal/session"
@@ -348,6 +350,32 @@ func main() {
 	}
 
 	registry := toolspkg.NewToolRegistry()
+
+	mcpRuntime := mcppkg.NewRuntime()
+	defer func() {
+		if err := mcpRuntime.Close(); err != nil {
+			fmt.Println("MCP shutdown error:", err)
+		}
+	}()
+
+	ctx := context.Background()
+
+	for _, server := range appConfig.MCP.Servers {
+		fmt.Printf("Connecting to MCP server: %s\n", server.Name)
+
+		if err := mcpRuntime.ConnectServer(
+			ctx,
+			server.Name,
+			server.Command,
+			server.Args,
+			registry,
+		); err != nil {
+			fmt.Printf("MCP server error: %v\n", err)
+			return
+		}
+
+		fmt.Printf("Connected to MCP server: %s\n", server.Name)
+	}
 
 	agentClient := agentpkg.NewAgent(registry)
 
