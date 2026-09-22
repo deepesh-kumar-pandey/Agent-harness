@@ -4,5 +4,13 @@
     "model": "llama3.1",
     "base_url": "http://localhost:11434",
     "endpoint": "/api/chat"
+  },
+  "mcp": {
+    "servers": [
+      {
+        "name": "test-server",
+        "command": "./mcp-test-server/mcp-test-server"
+      }
+    ]
   }
 }
