@@ -8,6 +8,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// Tests creating a new MCP tool.
 func TestNewTool(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -45,7 +46,7 @@ func TestNewTool(t *testing.T) {
 	}
 }
 
-// Tool Name and Description unit test
+// Tests MCP tool name and description.
 func TestToolNameAndDescription(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -91,7 +92,7 @@ func TestToolNameAndDescription(t *testing.T) {
 	}
 }
 
-// Tool Execute unit test
+// Tests successful MCP tool execution.
 func TestToolExecute(t *testing.T) {
 	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
 
@@ -183,7 +184,7 @@ func TestToolExecute(t *testing.T) {
 	}
 }
 
-// Tool Schema unit test
+// Tests MCP tool schema conversion.
 func TestToolSchema(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -254,7 +255,7 @@ func TestToolSchema(t *testing.T) {
 	}
 }
 
-// Unit test for handling MCP tool execution errors.
+// Tests MCP tool execution errors.
 func TestToolExecuteError(t *testing.T) {
 	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
 
