@@ -1,23 +1,31 @@
 package config
 
 import (
+	"os"
 	"testing"
 )
 
 func TestLoadConfig(t *testing.T) {
+	validConfig := `{
+		"provider": {
+			"name": "ollama",
+			"model": "llama3.1",
+			"base_url": "http://localhost:11434",
+			"endpoint": "/api/chat"
+		}
+	}`
+
 	testCases := []struct {
 		name        string
 		path        string
 		expectError bool
 	}{
 		{
-			// Tests loading a valid configuration file.
 			name:        "Valid config",
 			path:        "config.json",
 			expectError: false,
 		},
 		{
-			// Tests handling a configuration file that does not exist.
 			name:        "Config file does not exist",
 			path:        "nonexistent.json",
 			expectError: true,
@@ -26,6 +34,13 @@ func TestLoadConfig(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.name == "Valid config" {
+				if err := os.WriteFile(testCase.path, []byte(validConfig), 0600); err != nil {
+					t.Fatalf("failed to create test config: %v", err)
+				}
+				defer os.Remove(testCase.path)
+			}
+
 			config, err := Load(testCase.path)
 
 			if testCase.expectError {
@@ -41,10 +56,7 @@ func TestLoadConfig(t *testing.T) {
 			}
 
 			if config == nil {
-				t.Errorf(
-					"Please provide a valid config file for the test case: %s",
-					testCase.path,
-				)
+				t.Errorf("expected a valid config")
 			}
 		})
 	}
@@ -57,7 +69,6 @@ func TestValidateConfig(t *testing.T) {
 		expectError bool
 	}{
 		{
-			// Tests a valid provider configuration.
 			name: "Valid config",
 			config: Config{
 				Provider: Provider{
@@ -70,7 +81,6 @@ func TestValidateConfig(t *testing.T) {
 			expectError: false,
 		},
 		{
-			// Tests a valid configuration containing an MCP server.
 			name: "Valid config with MCP server",
 			config: Config{
 				Provider: Provider{
@@ -91,7 +101,6 @@ func TestValidateConfig(t *testing.T) {
 			expectError: false,
 		},
 		{
-			// Tests validation when the provider name is missing.
 			name: "Missing provider name",
 			config: Config{
 				Provider: Provider{
@@ -103,7 +112,6 @@ func TestValidateConfig(t *testing.T) {
 			expectError: true,
 		},
 		{
-			// Tests validation when the provider model is missing.
 			name: "Missing model",
 			config: Config{
 				Provider: Provider{
@@ -115,7 +123,6 @@ func TestValidateConfig(t *testing.T) {
 			expectError: true,
 		},
 		{
-			// Tests validation when the provider base URL is missing.
 			name: "Missing base URL",
 			config: Config{
 				Provider: Provider{
@@ -127,7 +134,6 @@ func TestValidateConfig(t *testing.T) {
 			expectError: true,
 		},
 		{
-			// Tests validation when the provider endpoint is missing.
 			name: "Missing endpoint",
 			config: Config{
 				Provider: Provider{
