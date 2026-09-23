@@ -43,4 +43,4 @@ temp/
 **/.sessions/
 
 # Local configuration
-config/config.json
+config/config.jsonconfig/config.json
