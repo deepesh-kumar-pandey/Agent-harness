@@ -151,25 +151,16 @@ func TestToolAdapterExecute(t *testing.T) {
 		t.Fatal("expected tool result, got nil")
 	}
 
-	callResult, ok := result.(*mcpsdk.CallToolResult)
+	textResult, ok := result.(string)
 	if !ok {
-		t.Fatalf("expected CallToolResult, got %T", result)
+		t.Fatalf("expected string, got %T", result)
 	}
 
-	if len(callResult.Content) != 1 {
-		t.Fatalf("expected 1 content item, got %d", len(callResult.Content))
-	}
-
-	textContent, ok := callResult.Content[0].(*mcpsdk.TextContent)
-	if !ok {
-		t.Fatalf("expected text content, got %T", callResult.Content[0])
-	}
-
-	if textContent.Text != "adapter executed successfully" {
+	if textResult != "adapter executed successfully" {
 		t.Fatalf(
 			"expected result %q, got %q",
 			"adapter executed successfully",
-			textContent.Text,
+			textResult,
 		)
 	}
 
