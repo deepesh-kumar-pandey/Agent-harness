@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	toolspkg "agent-harness/internal/tools"
 
@@ -39,7 +41,24 @@ func (t *ToolAdapter) Schema() map[string]any {
 }
 
 func (t *ToolAdapter) Execute(args map[string]any) (any, error) {
-	return t.tool.Execute(t.ctx, t.session, args)
+	result, err := t.tool.Execute(t.ctx, t.session, args)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.IsError {
+		return nil, fmt.Errorf("MCP tool %q returned an error", t.Name())
+	}
+
+	var output strings.Builder
+
+	for _, content := range result.Content {
+		if textContent, ok := content.(*mcpsdk.TextContent); ok {
+			output.WriteString(textContent.Text)
+		}
+	}
+
+	return output.String(), nil
 }
 
 var _ toolspkg.Tool = (*ToolAdapter)(nil)
