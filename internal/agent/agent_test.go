@@ -454,36 +454,21 @@ func TestAgentRunMCPTool(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	callResult, ok := result.(*mcpsdk.CallToolResult)
+	textResult, ok := result.(string)
 	if !ok {
 		t.Fatalf(
-			"expected *mcpsdk.CallToolResult, got %T",
+			"expected string, got %T",
 			result,
-		)
-	}
-
-	if len(callResult.Content) != 1 {
-		t.Fatalf(
-			"expected 1 content item, got %d",
-			len(callResult.Content),
-		)
-	}
-
-	textContent, ok := callResult.Content[0].(*mcpsdk.TextContent)
-	if !ok {
-		t.Fatalf(
-			"expected *mcpsdk.TextContent, got %T",
-			callResult.Content[0],
 		)
 	}
 
 	expected := "MCP tool executed successfully"
 
-	if textContent.Text != expected {
+	if textResult != expected {
 		t.Fatalf(
 			"expected %q, got %q",
 			expected,
-			textContent.Text,
+			textResult,
 		)
 	}
 }
