@@ -1,15 +1,24 @@
 package session
 
-import providerpkg "agent-harness/internal/provider"
+import (
+	providerpkg "agent-harness/internal/provider"
+	"time"
+)
 
 type Session struct {
-	ID       string
-	Messages []providerpkg.Message
+	ID        string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Messages  []providerpkg.Message
 }
 
 func NewSession(id string) *Session {
+	now := time.Now()
+
 	return &Session{
-		ID:       id,
-		Messages: make([]providerpkg.Message, 0),
+		ID:        id,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages:  make([]providerpkg.Message, 0),
 	}
 }
