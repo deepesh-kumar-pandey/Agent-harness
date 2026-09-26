@@ -31,6 +31,18 @@ func TestNewSession(t *testing.T) {
 				t.Errorf("expected ID %q, got %q", testCase.id, session.ID)
 			}
 
+			if session.CreatedAt.IsZero() {
+				t.Fatal("expected CreatedAt to be set")
+			}
+
+			if session.UpdatedAt.IsZero() {
+				t.Fatal("expected UpdatedAt to be set")
+			}
+
+			if !session.CreatedAt.Equal(session.UpdatedAt) {
+				t.Fatal("expected CreatedAt and UpdatedAt to match")
+			}
+
 			if session.Messages == nil {
 				t.Fatal("expected messages, got nil")
 			}
