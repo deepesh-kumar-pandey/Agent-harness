@@ -1,8 +1,11 @@
 package session
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
+
+	providerpkg "agent-harness/internal/provider"
 )
 
 // TestNewSession verifies a new session is initialized correctly.
@@ -89,5 +92,75 @@ func TestSessionRename(t *testing.T) {
 
 	if !session.UpdatedAt.After(previousUpdatedAt) {
 		t.Fatal("expected UpdatedAt to be updated")
+	}
+}
+
+// TestSessionExport verifies a session can be exported as JSON.
+func TestSessionExport(t *testing.T) {
+	session := NewSession("test-session")
+
+	session.Metadata["name"] = "My Session"
+	session.Metadata["description"] = "Export test"
+
+	session.Messages = append(
+		session.Messages,
+		providerpkg.Message{
+			Role:    "user",
+			Content: "Hello",
+		},
+	)
+
+	data, err := session.Export()
+	if err != nil {
+		t.Fatalf("expected no error while exporting session, got %v", err)
+	}
+
+	if len(data) == 0 {
+		t.Fatal("expected exported data, got empty")
+	}
+
+	var exported Session
+
+	if err := json.Unmarshal(data, &exported); err != nil {
+		t.Fatalf("expected valid JSON, got %v", err)
+	}
+
+	if exported.ID != "test-session" {
+		t.Errorf(
+			"expected exported ID %q, got %q",
+			"test-session",
+			exported.ID,
+		)
+	}
+
+	if exported.Metadata["name"] != "My Session" {
+		t.Errorf(
+			"expected exported metadata name %q, got %q",
+			"My Session",
+			exported.Metadata["name"],
+		)
+	}
+
+	if exported.Metadata["description"] != "Export test" {
+		t.Errorf(
+			"expected exported metadata description %q, got %q",
+			"Export test",
+			exported.Metadata["description"],
+		)
+	}
+
+	if len(exported.Messages) != 1 {
+		t.Fatalf(
+			"expected 1 exported message, got %d",
+			len(exported.Messages),
+		)
+	}
+
+	if exported.Messages[0].Content != "Hello" {
+		t.Errorf(
+			"expected exported message content %q, got %q",
+			"Hello",
+			exported.Messages[0].Content,
+		)
 	}
 }
