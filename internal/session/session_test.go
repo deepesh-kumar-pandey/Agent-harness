@@ -43,6 +43,17 @@ func TestNewSession(t *testing.T) {
 				t.Fatal("expected CreatedAt and UpdatedAt to match")
 			}
 
+			if session.Metadata == nil {
+				t.Fatal("expected metadata, got nil")
+			}
+
+			if len(session.Metadata) != 0 {
+				t.Errorf(
+					"expected empty metadata, got %d",
+					len(session.Metadata),
+				)
+			}
+
 			if session.Messages == nil {
 				t.Fatal("expected messages, got nil")
 			}
