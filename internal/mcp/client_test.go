@@ -2,11 +2,15 @@ package mcp
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// Unit test for creating a new MCP client.
 func TestNewClient(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -35,6 +39,7 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
+// Unit test for connecting the MCP client using a transport.
 func TestClientConnect(t *testing.T) {
 	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
 
@@ -78,7 +83,75 @@ func TestClientConnect(t *testing.T) {
 	}
 }
 
-// Unit test for list tool function
+// Unit test for connecting to an MCP server using a command.
+func TestClientConnectCommand(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to determine current test file")
+	}
+
+	projectRoot := filepath.Join(
+		filepath.Dir(currentFile),
+		"..",
+		"..",
+	)
+
+	command := filepath.Join(
+		projectRoot,
+		"cmd",
+		"mcp-test-server",
+		"mcp-test-server",
+	)
+
+	if _, err := os.Stat(command); err != nil {
+		t.Fatalf("test MCP server executable not found: %v", err)
+	}
+
+	client := NewClient()
+	ctx := context.Background()
+
+	session, err := client.ConnectCommand(
+		ctx,
+		command,
+		[]string{},
+	)
+	if err != nil {
+		t.Fatalf("expected command connection to succeed, got error: %v", err)
+	}
+
+	if session == nil {
+		t.Fatal("expected client session, got nil")
+	}
+
+	tools, err := client.ListTools(ctx, session)
+	if err != nil {
+		t.Fatalf("expected tool listing to succeed, got error: %v", err)
+	}
+
+	if len(tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(tools))
+	}
+
+	toolNames := make(map[string]bool)
+
+	for _, tool := range tools {
+		toolNames[tool.Name] = true
+	}
+
+	if !toolNames["test_tool"] {
+		t.Fatal("expected test_tool to be registered")
+	}
+
+	if !toolNames["error_tool"] {
+		t.Fatal("expected error_tool to be registered")
+	}
+
+	if err := session.Close(); err != nil {
+		t.Fatalf("failed to close session: %v", err)
+	}
+}
+
+// Unit test for listing tools exposed by an MCP server.
 func TestClientListTools(t *testing.T) {
 	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
 

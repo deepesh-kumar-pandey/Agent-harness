@@ -7,7 +7,18 @@ import (
 )
 
 type Config struct {
-	Provider Provider `json:"provider"`
+	Provider Provider  `json:"provider"`
+	MCP      MCPConfig `json:"mcp"`
+}
+
+type MCPConfig struct {
+	Servers []MCPServer `json:"servers"`
+}
+
+type MCPServer struct {
+	Name    string   `json:"name"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
 }
 
 type Provider struct {

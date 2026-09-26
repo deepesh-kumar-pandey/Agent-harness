@@ -8,6 +8,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// Tests creating a new MCP tool.
 func TestNewTool(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -45,7 +46,7 @@ func TestNewTool(t *testing.T) {
 	}
 }
 
-// Tool Name and Description unit test
+// Tests MCP tool name and description.
 func TestToolNameAndDescription(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -91,7 +92,7 @@ func TestToolNameAndDescription(t *testing.T) {
 	}
 }
 
-// Tool Execute unit test
+// Tests successful MCP tool execution.
 func TestToolExecute(t *testing.T) {
 	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
 
@@ -183,7 +184,7 @@ func TestToolExecute(t *testing.T) {
 	}
 }
 
-// Tool Schema unit test
+// Tests MCP tool schema conversion.
 func TestToolSchema(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -251,5 +252,91 @@ func TestToolSchema(t *testing.T) {
 
 			t.Log("MCP tool schema retrieved successfully")
 		})
+	}
+}
+
+// Tests MCP tool execution errors.
+func TestToolExecuteError(t *testing.T) {
+	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
+
+	server := mcpsdk.NewServer(
+		&mcpsdk.Implementation{
+			Name:    "test-server",
+			Version: "0.1.0",
+		},
+		nil,
+	)
+
+	mcpsdk.AddTool(
+		server,
+		&mcpsdk.Tool{
+			Name:        "error_tool",
+			Description: "A test tool that always returns an error",
+		},
+		func(
+			ctx context.Context,
+			req *mcpsdk.CallToolRequest,
+			args struct{},
+		) (*mcpsdk.CallToolResult, any, error) {
+			return &mcpsdk.CallToolResult{
+				IsError: true,
+				Content: []mcpsdk.Content{
+					&mcpsdk.TextContent{
+						Text: "MCP test error",
+					},
+				},
+			}, nil, nil
+		},
+	)
+
+	ctx := context.Background()
+
+	serverErr := make(chan error, 1)
+
+	go func() {
+		serverErr <- server.Run(ctx, serverTransport)
+	}()
+
+	client := NewClient()
+
+	session, err := client.Connect(ctx, clientTransport)
+	if err != nil {
+		t.Fatalf("expected connection to succeed, got error: %v", err)
+	}
+
+	tools, err := client.ListTools(ctx, session)
+	if err != nil {
+		t.Fatalf("expected tool listing to succeed, got error: %v", err)
+	}
+
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(tools))
+	}
+
+	tool := NewTool(*tools[0])
+
+	result, err := tool.Execute(ctx, session, map[string]any{})
+	if err != nil {
+		t.Fatalf("expected tool call to succeed, got error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("expected tool result, got nil")
+	}
+
+	if !result.IsError {
+		t.Fatal("expected MCP tool result to indicate an error")
+	}
+
+	if err := session.Close(); err != nil {
+		t.Fatalf("failed to close session: %v", err)
+	}
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			t.Fatalf("server returned error: %v", err)
+		}
+	default:
 	}
 }

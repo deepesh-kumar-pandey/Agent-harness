@@ -101,7 +101,7 @@ func TestFileSessionStoreSet(t *testing.T) {
 	}
 }
 
-// Test Set and Get preserve session messages.
+// Test Set and Get preserve session messages, timestamps, and metadata.
 func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -119,6 +119,9 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 			store := NewFileSessionStore(dir)
 
 			session := NewSession("test-session")
+
+			session.Rename("Renamed Session")
+			session.Metadata["description"] = "Session metadata test"
 
 			session.Messages = append(
 				session.Messages,
@@ -170,8 +173,40 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 				)
 			}
 
+			if !loadedSession.CreatedAt.Equal(session.CreatedAt) {
+				t.Errorf(
+					"expected CreatedAt %v, got %v",
+					session.CreatedAt,
+					loadedSession.CreatedAt,
+				)
+			}
+
+			if !loadedSession.UpdatedAt.Equal(session.UpdatedAt) {
+				t.Errorf(
+					"expected UpdatedAt %v, got %v",
+					session.UpdatedAt,
+					loadedSession.UpdatedAt,
+				)
+			}
+
+			if loadedSession.Metadata["name"] != "Renamed Session" {
+				t.Errorf(
+					"expected session name %q, got %q",
+					"Renamed Session",
+					loadedSession.Metadata["name"],
+				)
+			}
+
+			if loadedSession.Metadata["description"] != "Session metadata test" {
+				t.Errorf(
+					"expected metadata description %q, got %q",
+					"Session metadata test",
+					loadedSession.Metadata["description"],
+				)
+			}
+
 			fmt.Printf(
-				"Session messages stored and restored successfully: %s\n",
+				"Session messages, timestamps, and metadata stored and restored successfully: %s\n",
 				testCase.name,
 			)
 		})

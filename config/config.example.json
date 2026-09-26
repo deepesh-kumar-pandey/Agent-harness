@@ -4,5 +4,13 @@
     "model": "kirito1/qwen3-coder:4b",
     "base_url": "http://localhost:11434",
     "endpoint": "/api/chat"
+  },
+  "mcp": {
+    "servers": [
+      {
+        "name": "test-server",
+        "command": "./cmd/mcp-test-server/mcp-test-server"
+      }
+    ]
   }
 }
