@@ -2,10 +2,15 @@ package credentials
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+// ErrCredentialNotFound is returned when the credentials file is missing
+// or the requested provider has no stored credential.
+var ErrCredentialNotFound = errors.New("credential not found")
 
 type FileStore struct {
 	path string
@@ -70,6 +75,9 @@ func (s *FileStore) Get(provider string) (string, error) {
 
 	file, err := os.ReadFile(s.path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("%w for provider %q", ErrCredentialNotFound, provider)
+		}
 		return "", err
 	}
 
@@ -81,7 +89,7 @@ func (s *FileStore) Get(provider string) (string, error) {
 
 	key, exists := data[provider]
 	if !exists {
-		return "", fmt.Errorf("credential not found for provider %q", provider)
+		return "", fmt.Errorf("%w for provider %q", ErrCredentialNotFound, provider)
 	}
 
 	return key, nil
