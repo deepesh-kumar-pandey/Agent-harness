@@ -2,6 +2,7 @@ package session
 
 import (
 	providerpkg "agent-harness/internal/provider"
+	"encoding/json"
 	"time"
 )
 
@@ -29,4 +30,9 @@ func NewSession(id string) *Session {
 func (session *Session) Rename(name string) {
 	session.Metadata["name"] = name
 	session.UpdatedAt = time.Now()
+}
+
+// Export returns the session as JSON.
+func (session *Session) Export() ([]byte, error) {
+	return json.MarshalIndent(session, "", "  ")
 }
