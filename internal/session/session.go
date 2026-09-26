@@ -9,6 +9,7 @@ type Session struct {
 	ID        string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Metadata  map[string]string
 	Messages  []providerpkg.Message
 }
 
@@ -19,6 +20,7 @@ func NewSession(id string) *Session {
 		ID:        id,
 		CreatedAt: now,
 		UpdatedAt: now,
+		Metadata:  make(map[string]string),
 		Messages:  make([]providerpkg.Message, 0),
 	}
 }
