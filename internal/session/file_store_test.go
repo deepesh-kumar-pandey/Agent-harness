@@ -120,7 +120,7 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 
 			session := NewSession("test-session")
 
-			session.Metadata["name"] = "Test Session"
+			session.Rename("Renamed Session")
 			session.Metadata["description"] = "Session metadata test"
 
 			session.Messages = append(
@@ -189,10 +189,10 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 				)
 			}
 
-			if loadedSession.Metadata["name"] != "Test Session" {
+			if loadedSession.Metadata["name"] != "Renamed Session" {
 				t.Errorf(
-					"expected metadata name %q, got %q",
-					"Test Session",
+					"expected session name %q, got %q",
+					"Renamed Session",
 					loadedSession.Metadata["name"],
 				)
 			}
