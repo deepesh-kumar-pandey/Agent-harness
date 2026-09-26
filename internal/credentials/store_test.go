@@ -2,6 +2,7 @@ package credentials
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,59 +11,32 @@ import (
 
 // TestNewFileStore tests the creation of a file-based credential store.
 func TestNewFileStore(t *testing.T) {
-	testCases := []struct {
-		name        string
-		expectError bool
-	}{
-		{
-			name:        "creates file store",
-			expectError: false,
-		},
+	store, err := NewFileStore()
+	if err != nil {
+		t.Fatalf("NewFileStore() returned error: %v", err)
 	}
 
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Log("Creating file store")
+	if store == nil {
+		t.Fatal("expected file store, got nil")
+	}
 
-			store, err := NewFileStore()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("expected home directory, got error: %v", err)
+	}
 
-			if (err != nil) != testCase.expectError {
-				t.Fatalf(
-					"expected error: %v, got error: %v",
-					testCase.expectError,
-					err != nil,
-				)
-			}
+	expectedPath := filepath.Join(
+		homeDir,
+		".agent-harness",
+		"credentials.json",
+	)
 
-			if err != nil {
-				return
-			}
-
-			if store == nil {
-				t.Fatal("expected file store, got nil")
-			}
-
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				t.Fatalf("expected home directory, got error %v", err)
-			}
-
-			expectedPath := filepath.Join(
-				homeDir,
-				".agent-harness",
-				"credentials.json",
-			)
-
-			if store.path != expectedPath {
-				t.Fatalf(
-					"expected store path %q, got %q",
-					expectedPath,
-					store.path,
-				)
-			}
-
-			t.Log("File store created successfully")
-		})
+	if store.path != expectedPath {
+		t.Fatalf(
+			"expected store path %q, got %q",
+			expectedPath,
+			store.path,
+		)
 	}
 }
 
@@ -108,8 +82,6 @@ func TestFileStoreSet(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			t.Log("Setting credential")
-
 			tempDir := t.TempDir()
 
 			store := &FileStore{
@@ -164,7 +136,10 @@ func TestFileStoreSet(t *testing.T) {
 
 				err := json.Unmarshal(file, &data)
 				if err != nil {
-					t.Fatalf("expected valid credentials JSON, got error: %v", err)
+					t.Fatalf(
+						"expected valid credentials JSON, got error: %v",
+						err,
+					)
 				}
 
 				if data["openai"] != "updated-key" {
@@ -181,7 +156,10 @@ func TestFileStoreSet(t *testing.T) {
 
 				err := json.Unmarshal(file, &data)
 				if err != nil {
-					t.Fatalf("expected valid credentials JSON, got error: %v", err)
+					t.Fatalf(
+						"expected valid credentials JSON, got error: %v",
+						err,
+					)
 				}
 
 				if data["openai"] != "openai-key" {
@@ -200,8 +178,6 @@ func TestFileStoreSet(t *testing.T) {
 					)
 				}
 			}
-
-			t.Log("Credential stored successfully")
 		})
 	}
 }
@@ -209,10 +185,13 @@ func TestFileStoreSet(t *testing.T) {
 // TestFileStoreGet tests retrieving credentials from the file store.
 func TestFileStoreGet(t *testing.T) {
 	testCases := []struct {
-		name        string
-		provider    string
-		expectKey   string
-		expectError bool
+		name              string
+		provider          string
+		expectKey         string
+		expectError       bool
+		expectErrNotFound bool
+		missingFile       bool
+		malformedFile     bool
 	}{
 		{
 			name:        "gets credential",
@@ -221,10 +200,11 @@ func TestFileStoreGet(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "provider not found",
-			provider:    "anthropic",
-			expectKey:   "",
-			expectError: true,
+			name:              "provider not found",
+			provider:          "anthropic",
+			expectKey:         "",
+			expectError:       true,
+			expectErrNotFound: true,
 		},
 		{
 			name:        "empty provider",
@@ -232,21 +212,55 @@ func TestFileStoreGet(t *testing.T) {
 			expectKey:   "",
 			expectError: true,
 		},
+		{
+			name:              "missing credentials file",
+			provider:          "openai",
+			expectKey:         "",
+			expectError:       true,
+			expectErrNotFound: true,
+			missingFile:       true,
+		},
+		{
+			name:              "malformed JSON preserves parsing error",
+			provider:          "openai",
+			expectKey:         "",
+			expectError:       true,
+			expectErrNotFound: false,
+			malformedFile:     true,
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			t.Log("Getting credential")
-
 			tempDir := t.TempDir()
 
 			store := &FileStore{
 				path: filepath.Join(tempDir, "credentials.json"),
 			}
 
-			err := store.Set("openai", "test-key")
-			if err != nil {
-				t.Fatalf("failed to set test credential: %v", err)
+			switch {
+			case testCase.missingFile:
+				// Leave the file absent.
+
+			case testCase.malformedFile:
+				if err := os.WriteFile(
+					store.path,
+					[]byte("{invalid"),
+					0600,
+				); err != nil {
+					t.Fatalf(
+						"failed to write malformed JSON: %v",
+						err,
+					)
+				}
+
+			default:
+				if err := store.Set("openai", "test-key"); err != nil {
+					t.Fatalf(
+						"failed to set test credential: %v",
+						err,
+					)
+				}
 			}
 
 			key, err := store.Get(testCase.provider)
@@ -259,6 +273,19 @@ func TestFileStoreGet(t *testing.T) {
 				)
 			}
 
+			if testCase.expectError {
+				isNotFound := errors.Is(err, ErrCredentialNotFound)
+
+				if isNotFound != testCase.expectErrNotFound {
+					t.Fatalf(
+						"ErrCredentialNotFound: expected %v, got %v (error: %v)",
+						testCase.expectErrNotFound,
+						isNotFound,
+						err,
+					)
+				}
+			}
+
 			if key != testCase.expectKey {
 				t.Fatalf(
 					"expected key %q, got %q",
@@ -266,8 +293,6 @@ func TestFileStoreGet(t *testing.T) {
 					key,
 				)
 			}
-
-			t.Log("Credential retrieved successfully")
 		})
 	}
 }
@@ -298,8 +323,6 @@ func TestFileStoreDelete(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			t.Log("Deleting credential")
-
 			tempDir := t.TempDir()
 
 			store := &FileStore{
@@ -308,7 +331,10 @@ func TestFileStoreDelete(t *testing.T) {
 
 			err := store.Set("openai", "test-key")
 			if err != nil {
-				t.Fatalf("failed to set test credential: %v", err)
+				t.Fatalf(
+					"failed to set test credential: %v",
+					err,
+				)
 			}
 
 			err = store.Delete(testCase.provider)
@@ -332,8 +358,6 @@ func TestFileStoreDelete(t *testing.T) {
 					testCase.provider,
 				)
 			}
-
-			t.Log("Credential deleted successfully")
 		})
 	}
 }
