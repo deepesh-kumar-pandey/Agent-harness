@@ -36,3 +36,14 @@ func (session *Session) Rename(name string) {
 func (session *Session) Export() ([]byte, error) {
 	return json.MarshalIndent(session, "", "  ")
 }
+
+// Import restores a session from JSON.
+func Import(data []byte) (*Session, error) {
+	var session Session
+
+	if err := json.Unmarshal(data, &session); err != nil {
+		return nil, err
+	}
+
+	return &session, nil
+}
