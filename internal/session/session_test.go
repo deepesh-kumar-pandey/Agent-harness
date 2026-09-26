@@ -2,8 +2,10 @@ package session
 
 import (
 	"testing"
+	"time"
 )
 
+// TestNewSession verifies a new session is initialized correctly.
 func TestNewSession(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -65,5 +67,27 @@ func TestNewSession(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// TestSessionRename verifies renaming updates metadata and the timestamp.
+func TestSessionRename(t *testing.T) {
+	session := NewSession("test-session")
+	previousUpdatedAt := session.UpdatedAt
+
+	time.Sleep(time.Millisecond)
+
+	session.Rename("My Session")
+
+	if session.Metadata["name"] != "My Session" {
+		t.Errorf(
+			"expected session name %q, got %q",
+			"My Session",
+			session.Metadata["name"],
+		)
+	}
+
+	if !session.UpdatedAt.After(previousUpdatedAt) {
+		t.Fatal("expected UpdatedAt to be updated")
 	}
 }
