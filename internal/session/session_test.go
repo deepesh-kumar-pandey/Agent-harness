@@ -164,3 +164,96 @@ func TestSessionExport(t *testing.T) {
 		)
 	}
 }
+
+// TestSessionImport verifies a session can be restored from JSON.
+func TestSessionImport(t *testing.T) {
+	session := NewSession("test-session")
+
+	session.Metadata["name"] = "My Session"
+	session.Metadata["description"] = "Import test"
+
+	session.Messages = append(
+		session.Messages,
+		providerpkg.Message{
+			Role:    "user",
+			Content: "Hello",
+		},
+	)
+
+	data, err := json.Marshal(session)
+	if err != nil {
+		t.Fatalf("expected no error while creating session JSON, got %v", err)
+	}
+
+	imported, err := Import(data)
+	if err != nil {
+		t.Fatalf("expected no error while importing session, got %v", err)
+	}
+
+	if imported == nil {
+		t.Fatal("expected imported session, got nil")
+	}
+
+	if imported.ID != session.ID {
+		t.Errorf(
+			"expected imported ID %q, got %q",
+			session.ID,
+			imported.ID,
+		)
+	}
+
+	if !imported.CreatedAt.Equal(session.CreatedAt) {
+		t.Errorf(
+			"expected imported CreatedAt %v, got %v",
+			session.CreatedAt,
+			imported.CreatedAt,
+		)
+	}
+
+	if !imported.UpdatedAt.Equal(session.UpdatedAt) {
+		t.Errorf(
+			"expected imported UpdatedAt %v, got %v",
+			session.UpdatedAt,
+			imported.UpdatedAt,
+		)
+	}
+
+	if imported.Metadata["name"] != "My Session" {
+		t.Errorf(
+			"expected imported metadata name %q, got %q",
+			"My Session",
+			imported.Metadata["name"],
+		)
+	}
+
+	if imported.Metadata["description"] != "Import test" {
+		t.Errorf(
+			"expected imported metadata description %q, got %q",
+			"Import test",
+			imported.Metadata["description"],
+		)
+	}
+
+	if len(imported.Messages) != 1 {
+		t.Fatalf(
+			"expected 1 imported message, got %d",
+			len(imported.Messages),
+		)
+	}
+
+	if imported.Messages[0].Role != "user" {
+		t.Errorf(
+			"expected imported message role %q, got %q",
+			"user",
+			imported.Messages[0].Role,
+		)
+	}
+
+	if imported.Messages[0].Content != "Hello" {
+		t.Errorf(
+			"expected imported message content %q, got %q",
+			"Hello",
+			imported.Messages[0].Content,
+		)
+	}
+}
