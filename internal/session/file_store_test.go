@@ -101,7 +101,7 @@ func TestFileSessionStoreSet(t *testing.T) {
 	}
 }
 
-// Test Set and Get preserve session messages.
+// Test Set and Get preserve session messages and timestamps.
 func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -170,8 +170,24 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 				)
 			}
 
+			if !loadedSession.CreatedAt.Equal(session.CreatedAt) {
+				t.Errorf(
+					"expected CreatedAt %v, got %v",
+					session.CreatedAt,
+					loadedSession.CreatedAt,
+				)
+			}
+
+			if !loadedSession.UpdatedAt.Equal(session.UpdatedAt) {
+				t.Errorf(
+					"expected UpdatedAt %v, got %v",
+					session.UpdatedAt,
+					loadedSession.UpdatedAt,
+				)
+			}
+
 			fmt.Printf(
-				"Session messages stored and restored successfully: %s\n",
+				"Session messages and timestamps stored and restored successfully: %s\n",
 				testCase.name,
 			)
 		})
