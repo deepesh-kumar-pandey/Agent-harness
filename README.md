@@ -24,7 +24,7 @@ The project is designed with a **local-first architecture** while keeping the co
 
 The project currently supports:
 
-* Provider abstraction with Ollama integration
+* Provider abstraction with Ollama and OpenAI integration
 * Conversation history
 * Agent orchestration
 * Native tool calling
@@ -39,6 +39,10 @@ The project currently supports:
 * Credential storage and retrieval
 * In-memory session storage
 * File-based session storage
+* Session timestamps
+* Session metadata
+* Session renaming
+* Session export and import
 * Session-aware Agent runtime
 * Persistent Agent conversation history
 * Default session restoration
@@ -55,11 +59,12 @@ The core runtime is functional.
 
 Current development is focused on:
 
+* Improved persistence synchronization
 * Expanding MCP functionality
-* Improving session management
 * Improving CLI functionality
 * Adding additional providers
 * Increasing runtime extensibility
+* Database-backed session storage
 
 ---
 
@@ -72,6 +77,7 @@ The runtime uses provider-neutral interfaces so the Agent does not depend direct
 Currently integrated:
 
 * Ollama
+* OpenAI
 
 The Provider layer supports:
 
@@ -80,11 +86,49 @@ The Provider layer supports:
 * Conversation messages
 * Tool definitions
 * Tool calls
-* Model listing
-* Model availability checks
-* Model pulling
+* Model listing where supported
+* Model availability checks where supported
+* Model pulling where supported
 
 Provider-specific behavior remains behind the Provider abstraction.
+
+### Provider Factory
+
+The provider factory creates the appropriate provider implementation:
+
+```text
+NewProvider
+```
+
+`NewProvider` creates a provider based on the configured provider name, base URL, and API key.
+
+Currently supported providers are:
+
+```text
+ollama
+openai
+```
+
+### Provider API
+
+The common Provider interface exposes:
+
+```text
+Chat
+```
+
+`Chat` sends a provider-neutral chat request and returns the model response, including any requested tool calls.
+
+Local model providers can additionally implement:
+
+```text
+ListModels
+PullModel
+```
+
+`ListModels` returns locally available models where supported.
+
+`PullModel` downloads or prepares a local model where supported.
 
 ---
 
@@ -112,6 +156,24 @@ The Agent can operate using:
 
 When a Session is assigned, the Session becomes the source of conversation history.
 
+## Agent Operations
+
+### `SetSession`
+
+```text
+SetSession(session)
+```
+
+Assigns a Session to the Agent and makes that Session the active source of conversation history.
+
+### `GetMessages`
+
+```text
+GetMessages()
+```
+
+Returns the messages associated with the Agent's active conversation or assigned Session.
+
 ---
 
 # Tool System
@@ -135,6 +197,24 @@ The same abstraction is used for:
 * MCP tools
 * Future external tools
 
+### Tool Operations
+
+#### `Name`
+
+Returns the unique name used to identify the tool.
+
+#### `Description`
+
+Returns a human-readable description of what the tool does.
+
+#### `Execute`
+
+Executes the tool using the provided arguments and returns the tool result.
+
+#### `Schema`
+
+Returns the parameter schema used by the model to understand the tool's expected arguments.
+
 ---
 
 # Tool Registry
@@ -151,6 +231,56 @@ List
 Remove
 Schemas
 ```
+
+## Registry Operations
+
+### `Register`
+
+```text
+Register(tool)
+```
+
+Adds a tool to the registry using its tool name.
+
+### `Get`
+
+```text
+Get(name)
+```
+
+Retrieves a registered tool by name.
+
+### `Has`
+
+```text
+Has(name)
+```
+
+Checks whether a tool with the specified name is registered.
+
+### `List`
+
+```text
+List()
+```
+
+Returns all registered tools.
+
+### `Remove`
+
+```text
+Remove(name)
+```
+
+Removes a registered tool by name.
+
+### `Schemas`
+
+```text
+Schemas()
+```
+
+Returns the schemas of registered tools so they can be supplied to a model provider.
 
 The registry provides the common execution layer used by both native tools and MCP tools.
 
@@ -182,17 +312,47 @@ Result:
 30
 ```
 
+### Calculator Operations
+
+Each calculator operation:
+
+* Validates its arguments
+* Performs the requested arithmetic operation
+* Returns the calculated result
+
+Division and modulus operations also handle invalid zero divisors.
+
 ---
 
 ## Shell
 
 The Shell tool allows controlled local command execution through the common Tool interface.
 
+### Shell Execution
+
+The shell execution operation:
+
+```text
+Execute
+```
+
+runs the requested command and returns its output or an execution error.
+
 ---
 
 ## Filesystem
 
 The Filesystem tool provides filesystem-related operations through the common Tool interface.
+
+### Filesystem Execution
+
+The filesystem execution operation:
+
+```text
+Execute
+```
+
+performs the requested filesystem operation and returns the resulting data or an error.
 
 ---
 
@@ -222,32 +382,59 @@ The MCP flow is:
 
 ```text
 MCP Server
+
     │
+
     ▼
+
 Command Transport
+
     │
+
     ▼
+
 MCP Client
+
     │
+
     ▼
+
 Client Session
+
     │
+
     ▼
+
 List Tools
+
     │
+
     ▼
+
 MCP Tool
+
     │
+
     ▼
+
 Tool Adapter
+
     │
+
     ▼
+
 Native Tool Interface
+
     │
+
     ▼
+
 Tool Registry
+
     │
+
     ▼
+
 Agent
 ```
 
@@ -279,6 +466,40 @@ ConnectCommand
 ListTools
 ```
 
+## MCP Client Operations
+
+### `NewClient`
+
+```text
+NewClient(...)
+```
+
+Creates a new MCP client using the supplied client configuration.
+
+### `Connect`
+
+```text
+Connect(...)
+```
+
+Establishes an MCP connection using the configured transport.
+
+### `ConnectCommand`
+
+```text
+ConnectCommand(...)
+```
+
+Starts a local MCP server process and establishes an MCP connection using command-based transport.
+
+### `ListTools`
+
+```text
+ListTools(...)
+```
+
+Retrieves the tools exposed by the connected MCP server.
+
 ---
 
 # MCP Command Transport
@@ -297,17 +518,29 @@ Conceptually:
 
 ```text
 Agent Harness
+
      │
+
      ▼
+
 exec.CommandContext
+
      │
+
      ▼
+
 MCP Test / External Server
+
      │
+
      ▼
+
 stdin/stdout
+
      │
+
      ▼
+
 MCP Protocol
 ```
 
@@ -332,6 +565,28 @@ It provides:
 
 The MCP tool uses the MCP client session to call the remote MCP server.
 
+## MCP Tool Operations
+
+### Tool Metadata
+
+The MCP wrapper exposes the remote MCP tool's:
+
+```text
+Name
+Description
+Schema
+```
+
+These allow the tool to participate in the native Tool abstraction.
+
+### `Execute`
+
+```text
+Execute(...)
+```
+
+Sends the supplied arguments to the MCP server through the active MCP client session and returns the remote tool result.
+
 ---
 
 # MCP Tool Adapter
@@ -348,20 +603,35 @@ Conceptually:
 
 ```text
 MCP SDK Tool
+
      │
+
      ▼
+
 MCP Tool Wrapper
+
      │
+
      ▼
+
 Tool Adapter
+
      │
+
      ▼
+
 tools.Tool
+
      │
+
      ▼
+
 Tool Registry
+
      │
+
      ▼
+
 Agent
 ```
 
@@ -370,6 +640,19 @@ The Agent therefore does not need to know whether a tool originated from:
 * Built-in code
 * MCP
 * Another future tool provider
+
+### Adapter Operations
+
+The adapter forwards the native Tool operations to the underlying MCP tool.
+
+This includes:
+
+```text
+Name
+Description
+Schema
+Execute
+```
 
 ---
 
@@ -383,6 +666,16 @@ The MCP package provides tool registration functionality that:
 4. Registers the adapter in the Tool Registry
 
 This allows MCP tools to automatically become available to the Agent.
+
+### Registration Operation
+
+The registration operation:
+
+```text
+RegisterTools
+```
+
+discovers available MCP tools and adds them to the native Tool Registry.
 
 ---
 
@@ -408,6 +701,28 @@ The runtime:
 
 The runtime keeps the client sessions alive because MCP Tool Adapters use those sessions when executing tools.
 
+## MCP Runtime Operations
+
+### Runtime Creation
+
+Creates the runtime with the required Tool Registry and MCP configuration.
+
+### Server Connection
+
+Connects to configured MCP servers and creates the required MCP client sessions.
+
+### Tool Registration
+
+Discovers MCP tools and registers them into the native Tool Registry.
+
+### `Close`
+
+```text
+Close()
+```
+
+Closes active MCP sessions and releases MCP runtime resources during application shutdown.
+
 ---
 
 # MCP Runtime Lifecycle
@@ -416,42 +731,71 @@ The lifecycle is:
 
 ```text
 Application Start
+
        │
+
        ▼
+
 Load Configuration
+
        │
+
        ▼
+
 MCP Runtime
+
        │
+
        ├── Start MCP Server
-       │
+
        ├── Connect MCP Client
-       │
+
        ├── Create Session
-       │
+
        ├── Discover Tools
-       │
+
        └── Register Tools
+
        │
+
        ▼
+
 Application Running
+
        │
+
        ▼
+
 Agent Executes MCP Tool
+
        │
+
        ▼
+
 MCP Client Session
+
        │
+
        ▼
+
 MCP Server
+
        │
+
        ▼
+
 Tool Result
+
        │
+
        ▼
+
 Application Shutdown
+
        │
+
        ▼
+
 Close MCP Sessions
 ```
 
@@ -636,7 +980,53 @@ Credential functionality provides:
 * Credential deletion
 * Storage abstraction
 
+The credential store is used by providers that require API credentials.
+
 Credentials are kept separate from Provider logic so credential backends can evolve independently.
+
+The main credential operations are:
+
+```text
+Set
+Get
+Delete
+```
+
+## Credential Operations
+
+### `Set`
+
+```text
+Set(provider, key)
+```
+
+Stores or updates the credential associated with a provider.
+
+### `Get`
+
+```text
+Get(provider)
+```
+
+Retrieves the stored credential for the specified provider.
+
+If no credential exists, the store returns a credential-not-found error.
+
+### `Delete`
+
+```text
+Delete(provider)
+```
+
+Removes the stored credential associated with the specified provider.
+
+The current file-based credential store uses:
+
+```text
+~/.agent-harness/credentials.json
+```
+
+with restrictive filesystem permissions.
 
 ---
 
@@ -648,12 +1038,18 @@ Current session functionality includes:
 
 * Session creation
 * Session IDs
+* Session timestamps
+* Session metadata
+* Session renaming
 * Session message storage
 * In-memory session storage
 * File-based session storage
+* Session export
+* Session import
 * Set
 * Get
 * Delete
+* List
 * Agent session assignment
 * Session-aware Agent message handling
 * Persistent conversation history
@@ -663,10 +1059,129 @@ A Session currently contains:
 
 ```go
 type Session struct {
-    ID       string
-    Messages []providerpkg.Message
+    ID        string
+    CreatedAt time.Time
+    UpdatedAt time.Time
+    Metadata  map[string]string
+    Messages  []providerpkg.Message
 }
 ```
+
+`CreatedAt` records when the Session was created.
+
+`UpdatedAt` records the most recent Session update.
+
+`Metadata` stores session-level information such as the display name.
+
+`Messages` stores the conversation history associated with the Session.
+
+---
+
+# Session Operations
+
+## `NewSession`
+
+```text
+NewSession(id)
+```
+
+Creates a new Session with:
+
+* The supplied Session ID
+* Current creation timestamp
+* Current update timestamp
+* An initialized metadata map
+* An initialized message list
+
+## `Rename`
+
+```text
+Rename(name)
+```
+
+Updates the Session display name in metadata and updates `UpdatedAt`.
+
+The Session ID remains unchanged.
+
+## `Export`
+
+```text
+Export()
+```
+
+Serializes the complete Session into formatted JSON.
+
+The exported data includes:
+
+```text
+ID
+CreatedAt
+UpdatedAt
+Metadata
+Messages
+```
+
+## `Import`
+
+```text
+Import(data)
+```
+
+Restores a Session from serialized JSON data.
+
+This allows Session data to be reconstructed independently from the active Session Store.
+
+---
+
+# Session Renaming
+
+Sessions support a display name through metadata.
+
+The rename operation is:
+
+```text
+Rename
+```
+
+Renaming updates the Session metadata and `UpdatedAt` timestamp.
+
+The Session ID remains unchanged.
+
+This means renaming a Session changes its display name without changing its persistent storage identity.
+
+---
+
+# Session Export and Import
+
+Sessions support JSON export and import.
+
+The export operation:
+
+```text
+Export
+```
+
+serializes the complete Session into formatted JSON.
+
+The exported data includes:
+
+```text
+ID
+CreatedAt
+UpdatedAt
+Metadata
+Messages
+```
+
+The import operation:
+
+```text
+Import
+```
+
+restores a Session from JSON.
+
+This provides a foundation for moving or backing up Session data independently from the active Session Store.
 
 ---
 
@@ -688,7 +1203,87 @@ MemoryStore
 FileSessionStore
 ```
 
-The in-memory store keeps sessions for the lifetime of the process.
+## Store Operations
+
+### `Set`
+
+```text
+Set(session)
+```
+
+Stores or updates a Session.
+
+### `Get`
+
+```text
+Get(id)
+```
+
+Retrieves a Session by its ID.
+
+### `Delete`
+
+```text
+Delete(id)
+```
+
+Removes a Session by its ID.
+
+### `List`
+
+```text
+List()
+```
+
+Returns all available Sessions in the store.
+
+---
+
+# In-Memory Session Store
+
+The in-memory store keeps Sessions for the lifetime of the process.
+
+It provides:
+
+```text
+Set
+Get
+Delete
+List
+```
+
+Changes are lost when the application exits.
+
+---
+
+# File-Based Session Store
+
+The file-based store persists Sessions as JSON files.
+
+It provides:
+
+```text
+Set
+Get
+Delete
+List
+```
+
+### `Set`
+
+Serializes the Session to JSON and writes it to its persistent session file.
+
+### `Get`
+
+Reads the Session JSON file and reconstructs the Session object.
+
+### `Delete`
+
+Removes the Session JSON file.
+
+### `List`
+
+Scans the Session directory, loads valid Session files, and returns the stored Sessions.
 
 The file-based store serializes Session objects as JSON files.
 
@@ -710,8 +1305,11 @@ For example:
 
 ```text
 .sessions/
+
 ├── default.json
+
 ├── project-a.json
+
 └── project-b.json
 ```
 
@@ -747,24 +1345,39 @@ The persistence flow is:
 
 ```text
 User Input
+
     │
+
     ▼
+
 Agent
+
     │
+
     ▼
+
 Provider / Tools
+
     │
+
     ▼
+
 Updated Session
+
     │
+
     ▼
+
 FileSessionStore
+
     │
+
     ▼
+
 .sessions/<id>.json
 ```
 
-When the application starts, the `default` session is restored if it already exists.
+When the application starts, the `default` Session is restored if it already exists.
 
 ---
 
@@ -782,7 +1395,7 @@ Run the application with:
 go run ./cmd
 ```
 
-The CLI starts with the default session:
+The CLI starts with the default Session:
 
 ```text
 default
@@ -824,7 +1437,7 @@ Displays the currently configured model.
 model
 ```
 
-The model can also be overridden using:
+For Ollama, the model can also be overridden using:
 
 ```bash
 export OLLAMA_MODEL=your-model
@@ -876,6 +1489,7 @@ Example:
 
 ```text
 Sessions:
+
 - default
 - project-a
 - project-b
@@ -996,15 +1610,43 @@ The Provider layer is responsible for:
 * Receiving model responses
 * Handling tool definitions
 * Handling tool calls
-* Listing models
-* Checking model availability
+* Listing models where supported
+* Checking model availability where supported
 * Pulling local models where supported
+
+## Provider Operations
+
+### `Chat`
+
+```text
+Chat(request)
+```
+
+Sends a provider-neutral chat request and returns the provider response.
+
+### `ListModels`
+
+```text
+ListModels()
+```
+
+Lists models available from providers that support local model management.
+
+### `PullModel`
+
+```text
+PullModel(name)
+```
+
+Downloads or prepares a local model where the provider supports model management.
+
+Not every Provider implements the local model management interface.
 
 ---
 
 # Ollama
 
-Ollama is currently the primary integrated Provider.
+Ollama is the primary local Provider.
 
 The default Ollama URL is:
 
@@ -1044,9 +1686,97 @@ go run ./cmd
 
 ---
 
+# OpenAI
+
+OpenAI is supported through the Provider abstraction.
+
+The OpenAI provider is implemented in:
+
+```text
+internal/provider/openai.go
+```
+
+The provider uses the configured API base URL and API credential.
+
+API credentials are retrieved through the credential store rather than being stored directly in the Provider configuration.
+
+This keeps credential handling separate from provider-specific request logic.
+
+### OpenAI Operations
+
+#### `Chat`
+
+Sends a chat request to the configured OpenAI-compatible API endpoint and converts the response into the common Provider response type.
+
+#### Tool Call Handling
+
+Converts model-generated tool calls into the common:
+
+```text
+ToolCall
+```
+
+representation used by the Agent runtime.
+
+---
+
+# Provider Factory
+
+The Provider factory is implemented in:
+
+```text
+internal/provider/factory.go
+```
+
+It creates providers based on the configured provider name.
+
+The main operation is:
+
+```text
+NewProvider
+```
+
+### `NewProvider`
+
+```text
+NewProvider(name, baseURL, apiKey)
+```
+
+Creates the appropriate Provider implementation based on the provider name.
+
+Currently supported providers are:
+
+```text
+ollama
+openai
+```
+
+The factory also provides:
+
+```text
+RequiresAPIKey
+```
+
+### `RequiresAPIKey`
+
+```text
+RequiresAPIKey(name)
+```
+
+Determines whether a provider requires a stored API credential before it can be initialized.
+
+Currently:
+
+```text
+ollama → false
+openai → true
+```
+
+---
+
 # Model Override
 
-The configured model can be overridden using:
+The configured Ollama model can be overridden using:
 
 ```bash
 export OLLAMA_MODEL=llama3.1
@@ -1064,21 +1794,37 @@ It handles repeated:
 
 ```text
 Model Request
+
       │
+
       ▼
+
 Model Response
+
       │
+
       ├── Final Response
+
       │
+
       └── Tool Call
+
               │
+
               ▼
+
         Tool Execution
+
               │
+
               ▼
+
         Tool Result
+
               │
+
               ▼
+
         Model Request
 ```
 
@@ -1091,6 +1837,16 @@ The loop continues until:
 The maximum number of tool-call iterations can be configured.
 
 This prevents uncontrolled tool execution loops.
+
+### Orchestrator Operation
+
+The main orchestration operation:
+
+```text
+Run
+```
+
+executes the Agent/provider/tool loop until a final response or execution error is produced.
 
 ---
 
@@ -1117,7 +1873,7 @@ This prevents uncontrolled tool execution loops.
                 │    Provider     │    │  Tool Registry  │
                 │                 │    │                 │
                 │ Ollama          │    │ Calculator      │
-                │                 │    │ Shell           │
+                │ OpenAI          │    │ Shell           │
                 │                 │    │ Filesystem      │
                 └─────────────────┘    └────────┬────────┘
                                                 │
@@ -1147,22 +1903,25 @@ This prevents uncontrolled tool execution loops.
 # Session Architecture
 
 ```text
-                    ┌────────────────────┐
-                    │      Session       │
-                    │                    │
-                    │        ID          │
-                    │     Messages       │
-                    └─────────┬──────────┘
-                              │
-                     ┌────────┴────────┐
-                     │                 │
-                     ▼                 ▼
-             ┌──────────────┐   ┌──────────────┐
-             │ MemoryStore  │   │ File Store   │
-             └──────────────┘   └──────┬───────┘
-                                       │
-                                       ▼
-                                .sessions/*.json
+                    ┌────────────────────────┐
+                    │        Session         │
+                    │                        │
+                    │          ID            │
+                    │      CreatedAt         │
+                    │      UpdatedAt         │
+                    │       Metadata         │
+                    │       Messages         │
+                    └───────────┬────────────┘
+                                │
+                       ┌────────┴────────┐
+                       │                 │
+                       ▼                 ▼
+               ┌──────────────┐   ┌──────────────┐
+               │ MemoryStore  │   │ File Store   │
+               └──────────────┘   └──────┬───────┘
+                                         │
+                                         ▼
+                                  .sessions/*.json
 ```
 
 The Session layer is separated from the Agent runtime so storage implementations can evolve independently.
@@ -1175,42 +1934,79 @@ The Session layer is separated from the Agent runtime so storage implementations
 
 ```text
 User
+
  │
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  ▼
+
 Model
+
  │
+
  ├── Normal response ──────────► Agent ──► User
+
  │
+
  └── Tool call
+
        │
+
        ▼
+
    Tool Registry
+
        │
+
        ▼
+
    Tool Execution
+
        │
+
        ▼
+
    Tool Result
+
        │
+
        ▼
+
      Agent
+
        │
+
        ▼
+
     Provider
+
        │
+
        ▼
+
     Final Response
+
        │
+
        ▼
+
       User
 ```
 
@@ -1220,36 +2016,67 @@ Model
 
 ```text
 User
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  │ Tool Call
+
  ▼
+
 Tool Registry
+
  │
+
  ▼
+
 MCP Tool Adapter
+
  │
+
  ▼
+
 MCP Client Session
+
  │
+
  ▼
+
 MCP Server
+
  │
+
  ▼
+
 Tool Result
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  ▼
+
 Final Response
 ```
 
@@ -1259,34 +2086,62 @@ Final Response
 
 ```text
 CLI
+
  │
+
  ▼
+
 Session Store
+
  │
+
  ├── Create
  ├── Get
  ├── Set
  └── Delete
+
  │
+
  ▼
+
 Session
+
  │
+
  ├── ID
+ ├── CreatedAt
+ ├── UpdatedAt
+ ├── Metadata
  └── Messages
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider / Tools
+
  │
+
  ▼
+
 Updated Session
+
  │
+
  ▼
+
 Session Store
+
  │
+
  ▼
+
 Persistent Storage
 ```
 
@@ -1348,19 +2203,23 @@ Agent-harness/
 │   │   └── orchestrator_test.go
 │   │
 │   ├── provider/
-│   │   ├── provider.go
+│   │   ├── factory.go
+│   │   ├── factory_test.go
+│   │   ├── openai.go
+│   │   ├── openai_test.go
 │   │   ├── ollama.go
-│   │   └── ollama_test.go
+│   │   ├── ollama_test.go
+│   │   └── provider.go
 │   │
 │   ├── session/
+│   │   ├── file_store.go
+│   │   ├── file_store_test.go
+│   │   ├── memory_store.go
+│   │   ├── memory_store_test.go
 │   │   ├── session.go
 │   │   ├── session_test.go
 │   │   ├── store.go
-│   │   ├── store_test.go
-│   │   ├── memory_store.go
-│   │   ├── memory_store_test.go
-│   │   ├── file_store.go
-│   │   └── file_store_test.go
+│   │   └── store_test.go
 │   │
 │   └── tools/
 │       ├── tool.go
@@ -1387,7 +2246,15 @@ The generated MCP test-server binary:
 cmd/mcp-test-server/mcp-test-server
 ```
 
-is intentionally not included in the repository and should remain ignored by Git.
+is local build output and is intentionally not included in the repository. It should remain ignored by Git.
+
+The runtime-created session directory:
+
+```text
+.sessions/
+```
+
+is also local application data and is not part of the repository structure.
 
 ---
 
@@ -1415,6 +2282,12 @@ Run CLI tests:
 
 ```bash
 go test ./cmd
+```
+
+Run session tests:
+
+```bash
+go test ./internal/session -v
 ```
 
 ---
@@ -1473,17 +2346,29 @@ The workflow performs:
 
 ```text
 Checkout
+
    │
+
    ▼
+
 Setup Go
+
    │
+
    ▼
+
 Check Formatting
+
    │
+
    ▼
+
 go test ./...
+
    │
+
    ▼
+
 go vet ./...
 ```
 
@@ -1566,7 +2451,7 @@ Then open a pull request against `main`.
 
 ## Provider Neutrality
 
-The Agent should not depend directly on Ollama-specific APIs.
+The Agent should not depend directly on Ollama-specific APIs or OpenAI-specific APIs.
 
 Provider-specific behavior belongs behind the Provider interface.
 
@@ -1590,7 +2475,7 @@ Session storage is separated from the Agent runtime.
 
 This allows different storage implementations to be introduced without rewriting Agent execution.
 
-Potential future backends include:
+Potential storage backends include:
 
 ```text
 In-Memory
@@ -1607,13 +2492,21 @@ The project separates:
 
 ```text
 Configuration
+
 Credentials
+
 Sessions
+
 Providers
+
 Agent
+
 Orchestration
+
 Tools
+
 MCP
+
 CLI
 ```
 
@@ -1627,6 +2520,8 @@ The current implementation is designed to work with local models through Ollama.
 
 This allows development and testing without requiring a hosted model API.
 
+The architecture also supports cloud providers through the same Provider abstraction.
+
 ---
 
 ## Extensibility
@@ -1637,14 +2532,18 @@ Potential future extensions include:
 
 ```text
 Additional Providers
+
 Additional Tool Sources
+
 Additional Credential Backends
+
 Additional Session Backends
+
 Remote MCP Servers
+
 Database-backed Sessions
-Session Metadata
-Session Export
-Session Import
+
+Improved Persistence Synchronization
 ```
 
 ---
@@ -1655,7 +2554,10 @@ Session Import
 | ------------------------------------- | ----------- |
 | Go project structure                  | Implemented |
 | Provider abstraction                  | Implemented |
+| Provider factory                      | Implemented |
 | Ollama provider                       | Implemented |
+| OpenAI provider                       | Implemented |
+| Credential-aware provider creation    | Implemented |
 | Conversation history                  | Implemented |
 | Agent runtime                         | Implemented |
 | Session-aware Agent runtime           | Implemented |
@@ -1675,8 +2577,14 @@ Session Import
 | MCP test server                       | Implemented |
 | Credential abstraction                | Implemented |
 | Credential storage                    | Implemented |
+| Credential retrieval                  | Implemented |
 | Session abstraction                   | Implemented |
 | Session message storage               | Implemented |
+| Session timestamps                    | Implemented |
+| Session metadata                      | Implemented |
+| Session renaming                      | Implemented |
+| Session export                        | Implemented |
+| Session import                        | Implemented |
 | In-memory session store               | Implemented |
 | File-based session store              | Implemented |
 | Persistent Agent conversation history | Implemented |
@@ -1695,6 +2603,7 @@ Session Import
 | Go formatting checks                  | Implemented |
 | Go vet checks                         | Implemented |
 | GitHub Actions CI                     | Implemented |
+| Improved persistence synchronization  | Planned     |
 | Database-backed sessions              | Planned     |
 | Additional providers                  | Planned     |
 | Expanded MCP functionality            | Planned     |
@@ -1703,19 +2612,17 @@ Session Import
 
 # Roadmap
 
-## Improved Session Management
+## Improved Persistence
 
-Future session improvements include:
+The next session-related improvements include:
 
 ```text
-Database-backed Sessions
-Session Metadata
-Session Timestamps
-Session Renaming
-Session Export
-Session Import
 Improved Persistence Synchronization
+
+Database-backed Sessions
 ```
+
+The goal is to make Session state and persistent storage more robust as the runtime becomes more complex.
 
 ---
 
@@ -1741,10 +2648,13 @@ The current runtime primarily focuses on local command-based MCP servers.
 The Provider abstraction allows future integrations such as:
 
 ```text
-OpenAI-compatible APIs
 Anthropic
+
 Google
+
 Other Local Model Runtimes
+
+Additional OpenAI-compatible APIs
 ```
 
 Provider implementations can be added without changing the core Agent architecture.
@@ -1757,11 +2667,17 @@ Planned CLI improvements include:
 
 ```text
 Provider Management
+
 Tool Listing
+
 MCP Server Management
+
 Configuration Inspection
+
 Advanced Model Management
+
 Persistent Session Selection
+
 Interactive Tool Inspection
 ```
 
@@ -1773,41 +2689,77 @@ A simplified native tool execution looks like:
 
 ```text
 User
+
  │
+
  │ "What is 10 + 20?"
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama Provider
+
  │
+
  ▼
+
 Local Model
+
  │
+
  │ Tool Call
+
  ▼
+
 Tool Registry
+
  │
+
  ▼
+
 Calculator
+
  │
+
  │ 10 + 20
+
  ▼
+
 30
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama Provider
+
  │
+
  ▼
+
 Final Response
+
  │
+
  ▼
+
 CLI
 ```
 
@@ -1815,33 +2767,61 @@ A simplified MCP tool execution looks like:
 
 ```text
 User
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama
+
  │
+
  │ Tool Call
+
  ▼
+
 Tool Registry
+
  │
+
  ▼
+
 MCP Adapter
+
  │
+
  ▼
+
 MCP Client Session
+
  │
+
  ▼
+
 MCP Server
+
  │
+
  ▼
+
 Tool Result
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Final Response
 ```
 
@@ -1849,32 +2829,61 @@ A simplified session-aware flow looks like:
 
 ```text
 User
+
  │
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 Active Session
+
  │
+
  ├── ID
+ ├── CreatedAt
+ ├── UpdatedAt
+ ├── Metadata
  └── Messages
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  ▼
+
 Tool Execution
+
  │
+
  ▼
-Updated Session Messages
+
+Updated Session
+
  │
+
  ▼
+
 Session Store
+
  │
+
  ▼
+
 Persistent Storage
 ```
 
@@ -1888,17 +2897,29 @@ The project focuses on:
 
 ```text
 Provider Abstraction
+
         +
+
 Agent Runtime
+
         +
+
 Tool Execution
+
         +
+
 MCP
+
         +
+
 Credentials
+
         +
+
 Sessions
+
         +
+
 CLI
 ```
 
@@ -1908,10 +2929,15 @@ The project is designed to evolve toward a more complete agent runtime while mai
 
 ```text
 Providers
+
 Tools
+
 Sessions
+
 Credentials
+
 MCP
+
 CLI
 ```
 
