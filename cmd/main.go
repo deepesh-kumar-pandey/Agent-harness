@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	configpkg "agent-harness/config"
 	agentpkg "agent-harness/internal/agent"
+	credentialspkg "agent-harness/internal/credentials"
 	mcppkg "agent-harness/internal/mcp"
 	orchestratorpkg "agent-harness/internal/orchestrator"
 	providerpkg "agent-harness/internal/provider"
@@ -379,9 +381,37 @@ func main() {
 
 	agentClient := agentpkg.NewAgent(registry)
 
-	providerClient := providerpkg.Provider(&providerpkg.OllamaProvider{
-		BaseURL: appConfig.Provider.BaseURL,
-	})
+	// Resolve API key before constructing the provider.
+	var apiKey string
+	if providerpkg.RequiresAPIKey(appConfig.Provider.Name) {
+		credStore, err := credentialspkg.NewFileStore()
+		if err != nil {
+			fmt.Println("Credential store error:", err)
+			os.Exit(1)
+		}
+
+		key, err := credStore.Get(appConfig.Provider.Name)
+		if err != nil {
+			if errors.Is(err, credentialspkg.ErrCredentialNotFound) {
+				fmt.Printf("Error: The %q provider requires an API key, but it was not found.\n", appConfig.Provider.Name)
+				fmt.Println("Please ensure your credentials are configured correctly.")
+			} else {
+				fmt.Println("Failed to read credentials:", err)
+			}
+			os.Exit(1)
+		}
+		apiKey = key
+	}
+
+	providerClient, err := providerpkg.NewProvider(
+		appConfig.Provider.Name,
+		appConfig.Provider.BaseURL,
+		apiKey,
+	)
+	if err != nil {
+		fmt.Println("Provider initialization error:", err)
+		return
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 
