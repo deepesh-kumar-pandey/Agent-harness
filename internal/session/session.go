@@ -24,3 +24,9 @@ func NewSession(id string) *Session {
 		Messages:  make([]providerpkg.Message, 0),
 	}
 }
+
+// Rename updates the session display name.
+func (session *Session) Rename(name string) {
+	session.Metadata["name"] = name
+	session.UpdatedAt = time.Now()
+}
