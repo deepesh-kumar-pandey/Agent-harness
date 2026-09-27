@@ -39,6 +39,7 @@ The project currently supports:
 * Credential storage and retrieval
 * In-memory session storage
 * File-based session storage
+* Atomic file-based session persistence
 * Session timestamps
 * Session metadata
 * Session renaming
@@ -62,12 +63,11 @@ The core runtime is functional.
 
 Current development is focused on:
 
-* Improved persistence synchronization
+* Database-backed session storage
 * Expanding MCP functionality
 * Improving CLI functionality
 * Adding additional providers
 * Increasing runtime extensibility
-* Database-backed session storage
 
 ---
 
@@ -126,7 +126,6 @@ Local model providers can additionally implement:
 
 ```text
 ListModels
-
 PullModel
 ```
 
@@ -188,11 +187,8 @@ Tools expose a common interface containing:
 
 ```text
 Name
-
 Description
-
 Execute
-
 Schema
 ```
 
@@ -232,15 +228,10 @@ It supports:
 
 ```text
 Register
-
 Get
-
 Has
-
 List
-
 Remove
-
 Schemas
 ```
 
@@ -473,11 +464,8 @@ The main operations are:
 
 ```text
 NewClient
-
 Connect
-
 ConnectCommand
-
 ListTools
 ```
 
@@ -588,9 +576,7 @@ The MCP wrapper exposes the remote MCP tool's:
 
 ```text
 Name
-
 Description
-
 Schema
 ```
 
@@ -666,11 +652,8 @@ This includes:
 
 ```text
 Name
-
 Description
-
 Schema
-
 Execute
 ```
 
@@ -851,9 +834,7 @@ Each MCP server contains:
 
 ```text
 Name
-
 Command
-
 Args
 ```
 
@@ -1015,9 +996,7 @@ The main credential operations are:
 
 ```text
 Set
-
 Get
-
 Delete
 ```
 
@@ -1084,6 +1063,7 @@ Current session functionality includes:
 * Persistent conversation history
 * Default session restoration
 * Active session switching
+* Atomic session persistence
 
 A Session currently contains:
 
@@ -1229,11 +1209,8 @@ The Session Store provides:
 
 ```text
 Set
-
 Get
-
 Delete
-
 List
 ```
 
@@ -1241,7 +1218,6 @@ The project currently provides two implementations:
 
 ```text
 MemoryStore
-
 FileSessionStore
 ```
 
@@ -1289,11 +1265,8 @@ It provides:
 
 ```text
 Set
-
 Get
-
 Delete
-
 List
 ```
 
@@ -1309,17 +1282,64 @@ It provides:
 
 ```text
 Set
-
 Get
-
 Delete
-
 List
 ```
 
 ### `Set`
 
-Serializes the Session to JSON and writes it to its persistent session file.
+Serializes the Session to JSON and persists it using an atomic file-write process.
+
+The write flow is:
+
+```text
+Session
+
+   │
+
+   ▼
+
+JSON Serialization
+
+   │
+
+   ▼
+
+Temporary File
+
+   │
+
+   ▼
+
+Write Session Data
+
+   │
+
+   ▼
+
+Close Temporary File
+
+   │
+
+   ▼
+
+Rename Temporary File
+
+   │
+
+   ▼
+
+Final Session File
+```
+
+The Session is first written to a temporary file inside the Session Store directory.
+
+After the data has been successfully written and the temporary file has been closed, the temporary file is renamed to the final Session file.
+
+This prevents the final Session file from being replaced by partially written JSON if a write operation fails.
+
+Temporary files are also cleaned up after the operation.
 
 ### `Get`
 
@@ -1362,6 +1382,8 @@ For example:
 ```
 
 This allows session history to survive application restarts.
+
+Session writes use atomic temporary-file replacement so the final session file is not left with partially written JSON after a failed write.
 
 ---
 
@@ -1424,8 +1446,16 @@ FileSessionStore
 
     ▼
 
+Atomic Session Write
+
+    │
+
+    ▼
+
 .sessions/<id>.json
 ```
+
+The file persistence process writes the updated Session to a temporary file first and then replaces the final Session file using a rename operation.
 
 When the application starts, the `default` Session is restored if it already exists.
 
@@ -1593,9 +1623,7 @@ Example:
 Sessions:
 
 - default
-
 - project-a
-
 - project-b
 ```
 
@@ -1857,7 +1885,6 @@ Currently supported providers are:
 
 ```text
 ollama
-
 openai
 ```
 
@@ -1879,7 +1906,6 @@ Currently:
 
 ```text
 ollama → false
-
 openai → true
 ```
 
@@ -2036,6 +2062,8 @@ executes the Agent/provider/tool loop until a final response or execution error 
 ```
 
 The Session layer is separated from the Agent runtime so storage implementations can evolve independently.
+
+Future storage implementations can include database-backed storage without requiring changes to the Agent execution layer.
 
 ---
 
@@ -2260,6 +2288,12 @@ Session Store
 
  ▼
 
+Atomic File Persistence
+
+ │
+
+ ▼
+
 Persistent Storage
 ```
 
@@ -2269,179 +2303,92 @@ Persistent Storage
 
 ```text
 Agent-harness/
-
 │
-
 ├── .github/
-
 │   └── workflows/
-
 │       └── go.yml
-
 │
-
 ├── cmd/
-
 │   ├── main.go
-
 │   ├── main_test.go
-
 │   └── mcp-test-server/
-
 │       └── main.go
-
 │
-
 ├── config/
-
 │   ├── config.go
-
 │   ├── config_test.go
-
 │   ├── config.example.json
-
 │   └── config.json
-
 │
-
 ├── filesystem/
-
 │   ├── filesystem.go
-
 │   └── filesystem_test.go
-
 │
-
 ├── shell/
-
 │   ├── shell.go
-
 │   └── shell_test.go
-
 │
-
 ├── internal/
-
 │   │
-
 │   ├── agent/
-
 │   │   ├── agent.go
-
 │   │   ├── agent_test.go
-
 │   │   ├── history.go
-
 │   │   └── history_test.go
-
 │   │
-
 │   ├── credentials/
-
 │   │   ├── credentials.go
-
 │   │   └── credentials_test.go
-
 │   │
-
 │   ├── mcp/
-
 │   │   ├── adapter.go
-
 │   │   ├── adapter_test.go
-
 │   │   ├── client.go
-
 │   │   ├── client_test.go
-
 │   │   ├── runtime.go
-
 │   │   ├── runtime_test.go
-
 │   │   ├── tool.go
-
 │   │   └── tool_test.go
-
 │   │
-
 │   ├── orchestrator/
-
 │   │   ├── orchestrator.go
-
 │   │   └── orchestrator_test.go
-
 │   │
-
 │   ├── provider/
-
 │   │   ├── factory.go
-
 │   │   ├── factory_test.go
-
 │   │   ├── openai.go
-
 │   │   ├── openai_test.go
-
 │   │   ├── ollama.go
-
 │   │   ├── ollama_test.go
-
 │   │   └── provider.go
-
 │   │
-
 │   ├── session/
-
 │   │   ├── file_store.go
-
 │   │   ├── file_store_test.go
-
 │   │   ├── memory_store.go
-
 │   │   ├── memory_store_test.go
-
 │   │   ├── session.go
-
 │   │   ├── session_test.go
-
 │   │   ├── store.go
-
 │   │   └── store_test.go
-
 │   │
-
 │   └── tools/
-
 │       ├── tool.go
-
 │       ├── tool_test.go
-
 │       ├── registry.go
-
 │       ├── registry_test.go
-
 │       ├── calculator.go
-
 │       ├── calculator_test.go
-
 │       ├── shell.go
-
 │       ├── shell_test.go
-
 │       ├── filesystem.go
-
 │       └── filesystem_test.go
-
 │
-
 ├── .gitignore
-
 ├── go.mod
-
 ├── go.sum
-
 ├── LICENSE
-
 └── README.md
 ```
 
@@ -2587,7 +2534,6 @@ The workflow runs for pushes to:
 
 ```text
 main
-
 feature/**
 ```
 
@@ -2672,7 +2618,7 @@ git commit -m "your commit message"
 Push the feature branch:
 
 ```bash
-git push -u origin feature/<name>
+git push origin feature/<name>
 ```
 
 Then open a pull request against `main`.
@@ -2777,8 +2723,6 @@ Additional Session Backends
 Remote MCP Servers
 
 Database-backed Sessions
-
-Improved Persistence Synchronization
 ```
 
 ---
@@ -2824,6 +2768,7 @@ Improved Persistence Synchronization
 | File-based session store              | Implemented |
 | Persistent Agent conversation history | Implemented |
 | Automatic session persistence         | Implemented |
+| Atomic session persistence            | Implemented |
 | Default session restoration           | Implemented |
 | Active session switching on creation  | Implemented |
 | Interactive CLI                       | Implemented |
@@ -2839,7 +2784,6 @@ Improved Persistence Synchronization
 | Go formatting checks                  | Implemented |
 | Go vet checks                         | Implemented |
 | GitHub Actions CI                     | Implemented |
-| Improved persistence synchronization  | Planned     |
 | Database-backed sessions              | Planned     |
 | Additional providers                  | Planned     |
 | Expanded MCP functionality            | Planned     |
@@ -2850,15 +2794,33 @@ Improved Persistence Synchronization
 
 ## Improved Persistence
 
-The next session-related improvements include:
+The current file-based persistence is implemented using atomic session-file writes.
+
+The next session-related improvement is:
 
 ```text
-Improved Persistence Synchronization
-
 Database-backed Sessions
 ```
 
-The goal is to make Session state and persistent storage more robust as the runtime becomes more complex.
+The persistence architecture is being approached incrementally:
+
+```text
+Current File-Based Persistence
+
+        │
+
+        ▼
+
+Atomic File Persistence
+
+        │
+
+        ▼
+
+Database-Backed Sessions
+```
+
+The existing `SessionStore` abstraction allows future storage implementations to be introduced without changing the Agent runtime.
 
 ---
 
@@ -3058,6 +3020,12 @@ Agent
 
  ▼
 
+Ollama
+
+ │
+
+ ▼
+
 Final Response
 ```
 
@@ -3124,6 +3092,12 @@ Session Store
 
  ▼
 
+Atomic File Persistence
+
+ │
+
+ ▼
+
 Persistent Storage
 ```
 
@@ -3153,7 +3127,7 @@ NewSession
 Session Store
 
  │
- 
+
  ▼
 
 Agent.SetSession
