@@ -32,7 +32,29 @@ func (store *FileSessionStore) Set(session *Session) error {
 		return err
 	}
 
-	return os.WriteFile(store.sessionPath(session.ID), data, 0600)
+	tempFile, err := os.CreateTemp(store.dir, session.ID+".tmp-*")
+	if err != nil {
+		return err
+	}
+
+	tempPath := tempFile.Name()
+
+	defer os.Remove(tempPath)
+
+	if _, err := tempFile.Write(data); err != nil {
+		tempFile.Close()
+		return err
+	}
+
+	if err := tempFile.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tempPath, store.sessionPath(session.ID)); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (store *FileSessionStore) Get(id string) (*Session, error) {
