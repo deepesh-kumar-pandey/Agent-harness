@@ -343,7 +343,7 @@ func TestHandleCommand(t *testing.T) {
 			model:          "test-model",
 			modelSource:    "test-source",
 			expectedResult: CommandHandled,
-			expectedOutput: "Created session: new-session",
+			expectedOutput: "Created and switched to session: new-session",
 		},
 		{
 			name:           "Session create command missing ID",
@@ -494,6 +494,19 @@ func TestHandleCommand(t *testing.T) {
 					t.Fatalf(
 						"expected new-session to exist in store, got error: %v",
 						err,
+					)
+				}
+
+				if currentSession.ID != "new-session" {
+					t.Fatalf(
+						"expected current session to be new-session, got %q",
+						currentSession.ID,
+					)
+				}
+
+				if agentClient.GetMessages() == nil {
+					t.Fatalf(
+						"expected agent to have active session",
 					)
 				}
 			}
