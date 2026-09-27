@@ -101,6 +101,55 @@ func TestFileSessionStoreSet(t *testing.T) {
 	}
 }
 
+// Test Set leaves no temporary file after a successful write.
+func TestFileSessionStoreSetLeavesNoTemporaryFile(t *testing.T) {
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "successful set removes temporary file",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			dir := t.TempDir()
+			store := NewFileSessionStore(dir)
+
+			session := NewSession("test-session")
+
+			if err := store.Set(session); err != nil {
+				t.Fatalf(
+					"expected no error while setting session, got %v",
+					err,
+				)
+			}
+
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatalf(
+					"expected directory to be readable, got %v",
+					err,
+				)
+			}
+
+			if len(entries) != 1 {
+				t.Fatalf(
+					"expected exactly 1 file after Set, got %d",
+					len(entries),
+				)
+			}
+
+			if entries[0].Name() != "test-session.json" {
+				t.Fatalf(
+					"expected test-session.json, got %s",
+					entries[0].Name(),
+				)
+			}
+		})
+	}
+}
+
 // Test Set and Get preserve session messages, timestamps, and metadata.
 func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 	testCases := []struct {
