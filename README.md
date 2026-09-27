@@ -46,7 +46,10 @@ The project currently supports:
 * Session-aware Agent runtime
 * Persistent Agent conversation history
 * Default session restoration
-* CLI session creation, listing, loading, and deletion
+* CLI session creation and automatic activation
+* CLI session listing
+* CLI session loading
+* CLI session deletion
 * Interactive CLI
 * CLI model inspection
 * CLI session inspection
@@ -123,6 +126,7 @@ Local model providers can additionally implement:
 
 ```text
 ListModels
+
 PullModel
 ```
 
@@ -184,8 +188,11 @@ Tools expose a common interface containing:
 
 ```text
 Name
+
 Description
+
 Execute
+
 Schema
 ```
 
@@ -225,10 +232,15 @@ It supports:
 
 ```text
 Register
+
 Get
+
 Has
+
 List
+
 Remove
+
 Schemas
 ```
 
@@ -461,8 +473,11 @@ The main operations are:
 
 ```text
 NewClient
+
 Connect
+
 ConnectCommand
+
 ListTools
 ```
 
@@ -573,7 +588,9 @@ The MCP wrapper exposes the remote MCP tool's:
 
 ```text
 Name
+
 Description
+
 Schema
 ```
 
@@ -649,8 +666,11 @@ This includes:
 
 ```text
 Name
+
 Description
+
 Schema
+
 Execute
 ```
 
@@ -831,7 +851,9 @@ Each MCP server contains:
 
 ```text
 Name
+
 Command
+
 Args
 ```
 
@@ -897,7 +919,7 @@ cmd/mcp-test-server/mcp-test-server
 
 The generated binary is local build output and should not be committed to Git.
 
-The binary is used by the MCP command-transport tests.
+The binary is used by the MCP command-transport tests and is also built by the GitHub Actions CI workflow.
 
 ---
 
@@ -958,10 +980,15 @@ The runtime tests ensure that the runtime can:
 
 ```text
 Create Runtime
+
 Connect MCP Servers
+
 Discover MCP Tools
+
 Register Tools
+
 Keep Sessions
+
 Close Sessions
 ```
 
@@ -988,7 +1015,9 @@ The main credential operations are:
 
 ```text
 Set
+
 Get
+
 Delete
 ```
 
@@ -1018,7 +1047,7 @@ If no credential exists, the store returns a credential-not-found error.
 Delete(provider)
 ```
 
-Removes the stored credential associated with the specified provider.
+Removes the stored credential associated with the provider.
 
 The current file-based credential store uses:
 
@@ -1054,6 +1083,7 @@ Current session functionality includes:
 * Session-aware Agent message handling
 * Persistent conversation history
 * Default session restoration
+* Active session switching
 
 A Session currently contains:
 
@@ -1115,9 +1145,13 @@ The exported data includes:
 
 ```text
 ID
+
 CreatedAt
+
 UpdatedAt
+
 Metadata
+
 Messages
 ```
 
@@ -1167,9 +1201,13 @@ The exported data includes:
 
 ```text
 ID
+
 CreatedAt
+
 UpdatedAt
+
 Metadata
+
 Messages
 ```
 
@@ -1191,8 +1229,11 @@ The Session Store provides:
 
 ```text
 Set
+
 Get
+
 Delete
+
 List
 ```
 
@@ -1200,6 +1241,7 @@ The project currently provides two implementations:
 
 ```text
 MemoryStore
+
 FileSessionStore
 ```
 
@@ -1247,8 +1289,11 @@ It provides:
 
 ```text
 Set
+
 Get
+
 Delete
+
 List
 ```
 
@@ -1264,8 +1309,11 @@ It provides:
 
 ```text
 Set
+
 Get
+
 Delete
+
 List
 ```
 
@@ -1335,6 +1383,8 @@ messages := agent.GetMessages()
 
 This allows the Agent and Session to share the same conversation state.
 
+When a new Session is created through the CLI, the newly created Session is also assigned to the Agent and becomes the active Session.
+
 ---
 
 # Session Persistence
@@ -1379,6 +1429,48 @@ FileSessionStore
 
 When the application starts, the `default` Session is restored if it already exists.
 
+Creating a new session through the CLI also immediately activates the new Session:
+
+```text
+session create project-a
+```
+
+The resulting flow is:
+
+```text
+CLI
+
+ │
+
+ ▼
+
+Create Session
+
+ │
+
+ ▼
+
+Persist Session
+
+ │
+
+ ▼
+
+Set Active Session
+
+ │
+
+ ▼
+
+Assign Session to Agent
+
+ │
+
+ ▼
+
+Continue Conversation
+```
+
 ---
 
 # CLI
@@ -1410,7 +1502,7 @@ default
 | `help`                | Show available commands                |
 | `model`               | Show the currently configured model    |
 | `session`             | Show the current session ID            |
-| `session create <id>` | Create a new session                   |
+| `session create <id>` | Create and activate a new session      |
 | `session list`        | List stored sessions                   |
 | `session load <id>`   | Load and activate a stored session     |
 | `session delete <id>` | Delete a stored session                |
@@ -1463,7 +1555,7 @@ Current session: default
 
 # `session create`
 
-Creates a new session:
+Creates and activates a new session:
 
 ```text
 session create project-a
@@ -1472,8 +1564,18 @@ session create project-a
 Example:
 
 ```text
-Session created: project-a
+Created and switched to session: project-a
 ```
+
+The command performs the following operations:
+
+1. Creates the Session.
+2. Persists the Session to the Session Store.
+3. Assigns the Session to the Agent.
+4. Updates the active Session reference.
+5. Continues the CLI using the new Session.
+
+The Session ID remains the persistent identity of the Session.
 
 ---
 
@@ -1491,7 +1593,9 @@ Example:
 Sessions:
 
 - default
+
 - project-a
+
 - project-b
 ```
 
@@ -1506,6 +1610,8 @@ session load project-a
 ```
 
 The Agent is updated to use the loaded Session.
+
+The loaded Session becomes the active Session for subsequent interactions.
 
 ---
 
@@ -1591,8 +1697,11 @@ The configuration layer validates required Provider fields:
 
 ```text
 Provider Name
+
 Provider Model
+
 Provider Base URL
+
 Provider Endpoint
 ```
 
@@ -1748,6 +1857,7 @@ Currently supported providers are:
 
 ```text
 ollama
+
 openai
 ```
 
@@ -1769,6 +1879,7 @@ Currently:
 
 ```text
 ollama → false
+
 openai → true
 ```
 
@@ -2096,8 +2207,11 @@ Session Store
  │
 
  ├── Create
+
  ├── Get
+
  ├── Set
+
  └── Delete
 
  │
@@ -2109,9 +2223,13 @@ Session
  │
 
  ├── ID
+
  ├── CreatedAt
+
  ├── UpdatedAt
+
  ├── Metadata
+
  └── Messages
 
  │
@@ -2151,92 +2269,179 @@ Persistent Storage
 
 ```text
 Agent-harness/
+
 │
+
 ├── .github/
+
 │   └── workflows/
+
 │       └── go.yml
+
 │
+
 ├── cmd/
+
 │   ├── main.go
+
 │   ├── main_test.go
+
 │   └── mcp-test-server/
+
 │       └── main.go
+
 │
+
 ├── config/
+
 │   ├── config.go
+
 │   ├── config_test.go
+
 │   ├── config.example.json
+
 │   └── config.json
+
 │
+
 ├── filesystem/
+
 │   ├── filesystem.go
+
 │   └── filesystem_test.go
+
 │
+
 ├── shell/
+
 │   ├── shell.go
+
 │   └── shell_test.go
+
 │
+
 ├── internal/
+
 │   │
+
 │   ├── agent/
+
 │   │   ├── agent.go
+
 │   │   ├── agent_test.go
+
 │   │   ├── history.go
+
 │   │   └── history_test.go
+
 │   │
+
 │   ├── credentials/
+
 │   │   ├── credentials.go
+
 │   │   └── credentials_test.go
+
 │   │
+
 │   ├── mcp/
+
 │   │   ├── adapter.go
+
 │   │   ├── adapter_test.go
+
 │   │   ├── client.go
+
 │   │   ├── client_test.go
+
 │   │   ├── runtime.go
+
 │   │   ├── runtime_test.go
+
 │   │   ├── tool.go
+
 │   │   └── tool_test.go
+
 │   │
+
 │   ├── orchestrator/
+
 │   │   ├── orchestrator.go
+
 │   │   └── orchestrator_test.go
+
 │   │
+
 │   ├── provider/
+
 │   │   ├── factory.go
+
 │   │   ├── factory_test.go
+
 │   │   ├── openai.go
+
 │   │   ├── openai_test.go
+
 │   │   ├── ollama.go
+
 │   │   ├── ollama_test.go
+
 │   │   └── provider.go
+
 │   │
+
 │   ├── session/
+
 │   │   ├── file_store.go
+
 │   │   ├── file_store_test.go
+
 │   │   ├── memory_store.go
+
 │   │   ├── memory_store_test.go
+
 │   │   ├── session.go
+
 │   │   ├── session_test.go
+
 │   │   ├── store.go
+
 │   │   └── store_test.go
+
 │   │
+
 │   └── tools/
+
 │       ├── tool.go
+
 │       ├── tool_test.go
+
 │       ├── registry.go
+
 │       ├── registry_test.go
+
 │       ├── calculator.go
+
 │       ├── calculator_test.go
+
 │       ├── shell.go
+
 │       ├── shell_test.go
+
 │       ├── filesystem.go
+
 │       └── filesystem_test.go
+
 │
+
 ├── .gitignore
+
 ├── go.mod
+
 ├── go.sum
+
 ├── LICENSE
+
 └── README.md
 ```
 
@@ -2313,13 +2518,13 @@ The integration test requires:
 Format Go files with:
 
 ```bash
-gofmt -w $(find . -name '*.go')
+gofmt -w .
 ```
 
 Check formatting:
 
 ```bash
-gofmt -l $(find . -name '*.go')
+test -z "$(gofmt -l .)"
 ```
 
 The formatting check should produce no output.
@@ -2342,7 +2547,7 @@ The expected result is no reported issues.
 
 GitHub Actions is used to validate the repository automatically.
 
-The workflow performs:
+The current workflow performs:
 
 ```text
 Checkout
@@ -2363,7 +2568,13 @@ Check Formatting
 
    ▼
 
-go test ./...
+Build MCP Test Server
+
+   │
+
+   ▼
+
+go test -v ./...
 
    │
 
@@ -2376,6 +2587,7 @@ The workflow runs for pushes to:
 
 ```text
 main
+
 feature/**
 ```
 
@@ -2385,6 +2597,14 @@ and for pull requests targeting:
 main
 ```
 
+The MCP test server is built during CI using:
+
+```bash
+go build -o cmd/mcp-test-server/mcp-test-server ./cmd/mcp-test-server
+```
+
+This ensures the command-transport MCP tests have the required test-server binary available.
+
 ---
 
 # Development Workflow
@@ -2392,13 +2612,13 @@ main
 Create a feature branch:
 
 ```bash
-git checkout -b feature/<name>
+git switch -c feature/<name>
 ```
 
 Make changes and format the project:
 
 ```bash
-gofmt -w $(find . -name '*.go')
+gofmt -w .
 ```
 
 Run tests:
@@ -2411,6 +2631,18 @@ Run static analysis:
 
 ```bash
 go vet ./...
+```
+
+Check formatting:
+
+```bash
+test -z "$(gofmt -l .)"
+```
+
+Build the MCP test server:
+
+```bash
+go build -o cmd/mcp-test-server/mcp-test-server ./cmd/mcp-test-server
 ```
 
 Check the working tree:
@@ -2479,8 +2711,11 @@ Potential storage backends include:
 
 ```text
 In-Memory
+
 File
+
 Database
+
 Remote Storage
 ```
 
@@ -2590,6 +2825,7 @@ Improved Persistence Synchronization
 | Persistent Agent conversation history | Implemented |
 | Automatic session persistence         | Implemented |
 | Default session restoration           | Implemented |
+| Active session switching on creation  | Implemented |
 | Interactive CLI                       | Implemented |
 | CLI model command                     | Implemented |
 | CLI session display                   | Implemented |
@@ -2845,9 +3081,13 @@ Active Session
  │
 
  ├── ID
+
  ├── CreatedAt
+
  ├── UpdatedAt
+
  ├── Metadata
+
  └── Messages
 
  │
@@ -2885,6 +3125,50 @@ Session Store
  ▼
 
 Persistent Storage
+```
+
+A session creation flow looks like:
+
+```text
+User
+
+ │
+
+ │ session create project-a
+
+ ▼
+
+CLI
+
+ │
+
+ ▼
+
+NewSession
+
+ │
+
+ ▼
+
+Session Store
+
+ │
+ 
+ ▼
+
+Agent.SetSession
+
+ │
+
+ ▼
+
+Active Session
+
+ │
+
+ ▼
+
+Agent Runtime
 ```
 
 ---
