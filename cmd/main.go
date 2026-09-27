@@ -291,9 +291,20 @@ func handleCommand(
 				return CommandHandled
 			}
 
+			if err := agentClient.SetSession(session); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to activate session: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			*currentSession = session
+
 			fmt.Fprintf(
 				output,
-				"Created session: %s\n",
+				"Created and switched to session: %s\n",
 				session.ID,
 			)
 
@@ -381,7 +392,6 @@ func main() {
 
 	agentClient := agentpkg.NewAgent(registry)
 
-	// Resolve API key before constructing the provider.
 	var apiKey string
 	if providerpkg.RequiresAPIKey(appConfig.Provider.Name) {
 		credStore, err := credentialspkg.NewFileStore()
