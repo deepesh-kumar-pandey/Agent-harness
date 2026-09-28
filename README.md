@@ -39,7 +39,9 @@ The project currently supports:
 * Credential storage and retrieval
 * In-memory session storage
 * File-based session storage
+* Database-backed session storage
 * Atomic file-based session persistence
+* Transactional database session persistence
 * Session timestamps
 * Session metadata
 * Session renaming
@@ -63,7 +65,6 @@ The core runtime is functional.
 
 Current development is focused on:
 
-* Database-backed session storage
 * Expanding MCP functionality
 * Improving CLI functionality
 * Adding additional providers
@@ -385,59 +386,32 @@ The MCP flow is:
 
 ```text
 MCP Server
-
     │
-
     ▼
-
 Command Transport
-
     │
-
     ▼
-
 MCP Client
-
     │
-
     ▼
-
 Client Session
-
     │
-
     ▼
-
 List Tools
-
     │
-
     ▼
-
 MCP Tool
-
     │
-
     ▼
-
 Tool Adapter
-
     │
-
     ▼
-
 Native Tool Interface
-
     │
-
     ▼
-
 Tool Registry
-
     │
-
     ▼
-
 Agent
 ```
 
@@ -521,29 +495,17 @@ Conceptually:
 
 ```text
 Agent Harness
-
      │
-
      ▼
-
 exec.CommandContext
-
      │
-
      ▼
-
 MCP Test / External Server
-
      │
-
      ▼
-
 stdin/stdout
-
      │
-
      ▼
-
 MCP Protocol
 ```
 
@@ -606,35 +568,20 @@ Conceptually:
 
 ```text
 MCP SDK Tool
-
      │
-
      ▼
-
 MCP Tool Wrapper
-
      │
-
      ▼
-
 Tool Adapter
-
      │
-
      ▼
-
 tools.Tool
-
      │
-
      ▼
-
 Tool Registry
-
      │
-
      ▼
-
 Agent
 ```
 
@@ -734,71 +681,38 @@ The lifecycle is:
 
 ```text
 Application Start
-
        │
-
        ▼
-
 Load Configuration
-
        │
-
        ▼
-
 MCP Runtime
-
        │
-
        ├── Start MCP Server
-
        ├── Connect MCP Client
-
        ├── Create Session
-
        ├── Discover Tools
-
        └── Register Tools
-
        │
-
        ▼
-
 Application Running
-
        │
-
        ▼
-
 Agent Executes MCP Tool
-
        │
-
        ▼
-
 MCP Client Session
-
        │
-
        ▼
-
 MCP Server
-
        │
-
        ▼
-
 Tool Result
-
        │
-
        ▼
-
 Application Shutdown
-
        │
-
        ▼
-
 Close MCP Sessions
 ```
 
@@ -961,15 +875,10 @@ The runtime tests ensure that the runtime can:
 
 ```text
 Create Runtime
-
 Connect MCP Servers
-
 Discover MCP Tools
-
 Register Tools
-
 Keep Sessions
-
 Close Sessions
 ```
 
@@ -1052,6 +961,7 @@ Current session functionality includes:
 * Session message storage
 * In-memory session storage
 * File-based session storage
+* Database-backed session storage
 * Session export
 * Session import
 * Set
@@ -1063,7 +973,8 @@ Current session functionality includes:
 * Persistent conversation history
 * Default session restoration
 * Active session switching
-* Atomic session persistence
+* Atomic file persistence
+* Transactional database persistence
 
 A Session currently contains:
 
@@ -1125,13 +1036,9 @@ The exported data includes:
 
 ```text
 ID
-
 CreatedAt
-
 UpdatedAt
-
 Metadata
-
 Messages
 ```
 
@@ -1181,13 +1088,9 @@ The exported data includes:
 
 ```text
 ID
-
 CreatedAt
-
 UpdatedAt
-
 Metadata
-
 Messages
 ```
 
@@ -1214,12 +1117,15 @@ Delete
 List
 ```
 
-The project currently provides two implementations:
+The project currently provides three implementations:
 
 ```text
 MemoryStore
 FileSessionStore
+DatabaseSessionStore
 ```
+
+All three implementations follow the same Session Store abstraction, allowing the Agent runtime to remain independent of the underlying storage mechanism.
 
 ## Store Operations
 
@@ -1287,7 +1193,11 @@ Delete
 List
 ```
 
-### `Set`
+## `Set`
+
+```text
+Set(session)
+```
 
 Serializes the Session to JSON and persists it using an atomic file-write process.
 
@@ -1295,41 +1205,23 @@ The write flow is:
 
 ```text
 Session
-
    │
-
    ▼
-
 JSON Serialization
-
    │
-
    ▼
-
 Temporary File
-
    │
-
    ▼
-
 Write Session Data
-
    │
-
    ▼
-
 Close Temporary File
-
    │
-
    ▼
-
 Rename Temporary File
-
    │
-
    ▼
-
 Final Session File
 ```
 
@@ -1341,19 +1233,190 @@ This prevents the final Session file from being replaced by partially written JS
 
 Temporary files are also cleaned up after the operation.
 
-### `Get`
+## `Get`
+
+```text
+Get(id)
+```
 
 Reads the Session JSON file and reconstructs the Session object.
 
-### `Delete`
+## `Delete`
+
+```text
+Delete(id)
+```
 
 Removes the Session JSON file.
 
-### `List`
+## `List`
+
+```text
+List()
+```
 
 Scans the Session directory, loads valid Session files, and returns the stored Sessions.
 
-The file-based store serializes Session objects as JSON files.
+---
+
+# Database Session Store
+
+The database session store persists Sessions using SQLite.
+
+The implementation uses `modernc.org/sqlite`, a pure-Go SQLite implementation.
+
+SQLite is embedded and does not require a separate database server or network port.
+
+It provides:
+
+```text
+Set
+Get
+Delete
+List
+```
+
+The database store maintains two tables:
+
+```text
+sessions
+messages
+```
+
+The `sessions` table stores:
+
+* Session ID
+* Creation timestamp
+* Update timestamp
+* Metadata
+
+The `messages` table stores:
+
+* Session ID
+* Message role
+* Message content
+* Tool calls
+
+Session messages are associated with their parent Session through a foreign key with cascade deletion.
+
+Deleting a Session therefore also deletes its associated messages.
+
+Database writes use transactions so Session metadata and messages are persisted consistently.
+
+## Database Session Store Operations
+
+### `Set`
+
+```text
+Set(session)
+```
+
+Stores or updates a Session in the SQLite database.
+
+The operation persists:
+
+```text
+Session ID
+Creation timestamp
+Update timestamp
+Metadata
+Messages
+Tool calls
+```
+
+If the Session already exists, its stored metadata and timestamps are updated.
+
+The existing messages for that Session are replaced with the current Session message history.
+
+The Session and its messages are persisted within a database transaction.
+
+### `Get`
+
+```text
+Get(id)
+```
+
+Retrieves a Session from the SQLite database using its Session ID.
+
+The operation restores:
+
+```text
+Session ID
+Creation timestamp
+Update timestamp
+Metadata
+Messages
+Tool calls
+```
+
+Messages are loaded in their stored order and reconstructed into the Session's message history.
+
+If the Session does not exist, the store returns a Session-not-found error.
+
+### `Delete`
+
+```text
+Delete(id)
+```
+
+Deletes a Session from the SQLite database using its Session ID.
+
+Because the `messages` table uses a foreign key with cascade deletion, deleting a Session also removes all messages associated with that Session.
+
+If the Session does not exist, the store returns a Session-not-found error.
+
+### `List`
+
+```text
+List()
+```
+
+Returns all Sessions stored in the SQLite database.
+
+Sessions are retrieved in creation order.
+
+Each Session is reconstructed with its metadata and associated messages before being returned.
+
+---
+
+# Database Session Storage
+
+The database-backed Session architecture is:
+
+```text
+                    ┌──────────────────────┐
+                    │       Session        │
+                    │                      │
+                    │ ID / Timestamps      │
+                    │ Metadata / Messages  │
+                    └──────────┬───────────┘
+                               │
+             ┌─────────────────┼─────────────────┐
+             │                 │                 │
+             ▼                 ▼                 ▼
+      ┌────────────┐   ┌──────────────┐   ┌──────────────────┐
+      │ MemoryStore│   │ File Store   │   │ Database Store   │
+      └────────────┘   └──────┬───────┘   └────────┬─────────┘
+                              │                    │
+                              ▼                    ▼
+                       .sessions/*.json      SQLite Database
+```
+
+The database relationship is:
+
+```text
+Session
+   │
+   │ 1
+   ▼
+Messages
+   │
+   │ many
+   ▼
+Session Messages
+```
+
+The database store uses transactions when persisting Session metadata and messages so both parts of the Session are updated together.
 
 ---
 
@@ -1375,15 +1438,11 @@ For example:
 .sessions/
 
 ├── default.json
-
 ├── project-a.json
-
 └── project-b.json
 ```
 
-This allows session history to survive application restarts.
-
-Session writes use atomic temporary-file replacement so the final session file is not left with partially written JSON after a failed write.
+Session writes use atomic temporary-file replacement so the final Session file is not left with partially written JSON after a failed write.
 
 ---
 
@@ -1413,7 +1472,7 @@ When a new Session is created through the CLI, the newly created Session is also
 
 The application persists the active Session after successful Agent interactions.
 
-The persistence flow is:
+For file-based persistence, the flow is:
 
 ```text
 User Input
@@ -1455,7 +1514,47 @@ Atomic Session Write
 .sessions/<id>.json
 ```
 
-The file persistence process writes the updated Session to a temporary file first and then replaces the final Session file using a rename operation.
+For database-backed persistence, the flow is:
+
+```text
+User Input
+
+    │
+
+    ▼
+
+Agent
+
+    │
+
+    ▼
+
+Provider / Tools
+
+    │
+
+    ▼
+
+Updated Session
+
+    │
+
+    ▼
+
+DatabaseSessionStore
+
+    │
+
+    ▼
+
+Database Transaction
+
+    │
+
+    ▼
+
+SQLite Database
+```
 
 When the application starts, the `default` Session is restored if it already exists.
 
@@ -1499,6 +1598,34 @@ Assign Session to Agent
  ▼
 
 Continue Conversation
+```
+
+---
+
+# Database Session Testing
+
+Database session tests are located in:
+
+```text
+internal/session/database_store_test.go
+```
+
+The tests cover:
+
+* Database initialization
+* Session persistence
+* Session metadata persistence
+* Message persistence
+* Tool-call persistence
+* Session retrieval
+* Session deletion
+* Cascading message deletion
+* Session listing
+
+Run the session tests with:
+
+```bash
+go test ./internal/session -v
 ```
 
 ---
@@ -1725,11 +1852,8 @@ The configuration layer validates required Provider fields:
 
 ```text
 Provider Name
-
 Provider Model
-
 Provider Base URL
-
 Provider Endpoint
 ```
 
@@ -1839,13 +1963,13 @@ API credentials are retrieved through the credential store rather than being sto
 
 This keeps credential handling separate from provider-specific request logic.
 
-### OpenAI Operations
+## OpenAI Operations
 
-#### `Chat`
+### `Chat`
 
 Sends a chat request to the configured OpenAI-compatible API endpoint and converts the response into the common Provider response type.
 
-#### Tool Call Handling
+### Tool Call Handling
 
 Converts model-generated tool calls into the common:
 
@@ -1931,37 +2055,21 @@ It handles repeated:
 
 ```text
 Model Request
-
       │
-
       ▼
-
 Model Response
-
       │
-
       ├── Final Response
-
       │
-
       └── Tool Call
-
               │
-
               ▼
-
         Tool Execution
-
               │
-
               ▼
-
         Tool Result
-
               │
-
               ▼
-
         Model Request
 ```
 
@@ -2050,20 +2158,26 @@ executes the Agent/provider/tool loop until a final response or execution error 
                     │       Messages         │
                     └───────────┬────────────┘
                                 │
-                       ┌────────┴────────┐
-                       │                 │
-                       ▼                 ▼
-               ┌──────────────┐   ┌──────────────┐
-               │ MemoryStore  │   │ File Store   │
-               └──────────────┘   └──────┬───────┘
-                                         │
-                                         ▼
-                                  .sessions/*.json
+              ┌─────────────────┼─────────────────┐
+              │                 │                 │
+              ▼                 ▼                 ▼
+      ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
+      │ MemoryStore  │  │ File Store   │  │ Database Store       │
+      └──────────────┘  └──────┬───────┘  └──────────┬───────────┘
+                               │                     │
+                               ▼                     ▼
+                        .sessions/*.json       SQLite Database
 ```
 
 The Session layer is separated from the Agent runtime so storage implementations can evolve independently.
 
-Future storage implementations can include database-backed storage without requiring changes to the Agent execution layer.
+Current storage backends are:
+
+```text
+In-Memory
+File
+Database
+```
 
 ---
 
@@ -2073,79 +2187,42 @@ Future storage implementations can include database-backed storage without requi
 
 ```text
 User
-
  │
-
  ▼
-
 CLI
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Provider
-
  │
-
  ▼
-
 Model
-
  │
-
  ├── Normal response ──────────► Agent ──► User
-
  │
-
  └── Tool call
-
        │
-
        ▼
-
    Tool Registry
-
        │
-
        ▼
-
    Tool Execution
-
        │
-
        ▼
-
    Tool Result
-
        │
-
        ▼
-
      Agent
-
        │
-
        ▼
-
     Provider
-
        │
-
        ▼
-
     Final Response
-
        │
-
        ▼
-
       User
 ```
 
@@ -2155,67 +2232,36 @@ Model
 
 ```text
 User
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Provider
-
  │
-
  │ Tool Call
-
  ▼
-
 Tool Registry
-
  │
-
  ▼
-
 MCP Tool Adapter
-
  │
-
  ▼
-
 MCP Client Session
-
  │
-
  ▼
-
 MCP Server
-
  │
-
  ▼
-
 Tool Result
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Provider
-
  │
-
  ▼
-
 Final Response
 ```
 
@@ -2225,76 +2271,45 @@ Final Response
 
 ```text
 CLI
-
  │
-
  ▼
-
 Session Store
-
  │
-
  ├── Create
-
  ├── Get
-
  ├── Set
-
  └── Delete
-
  │
-
  ▼
-
 Session
-
  │
-
  ├── ID
-
  ├── CreatedAt
-
  ├── UpdatedAt
-
  ├── Metadata
-
  └── Messages
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Provider / Tools
-
  │
-
  ▼
-
 Updated Session
-
  │
-
  ▼
-
 Session Store
-
  │
-
- ▼
-
-Atomic File Persistence
-
+ ├── File Store
+ │      │
+ │      ▼
+ │   Atomic File Persistence
  │
-
- ▼
-
-Persistent Storage
+ └── Database Store
+        │
+        ▼
+     SQLite Transaction
 ```
 
 ---
@@ -2311,6 +2326,7 @@ Agent-harness/
 ├── cmd/
 │   ├── main.go
 │   ├── main_test.go
+│   │
 │   └── mcp-test-server/
 │       └── main.go
 │
@@ -2364,6 +2380,8 @@ Agent-harness/
 │   │   └── provider.go
 │   │
 │   ├── session/
+│   │   ├── database_store.go
+│   │   ├── database_store_test.go
 │   │   ├── file_store.go
 │   │   ├── file_store_test.go
 │   │   ├── memory_store.go
@@ -2374,16 +2392,16 @@ Agent-harness/
 │   │   └── store_test.go
 │   │
 │   └── tools/
-│       ├── tool.go
-│       ├── tool_test.go
-│       ├── registry.go
-│       ├── registry_test.go
 │       ├── calculator.go
 │       ├── calculator_test.go
+│       ├── filesystem.go
+│       ├── filesystem_test.go
+│       ├── registry.go
+│       ├── registry_test.go
 │       ├── shell.go
 │       ├── shell_test.go
-│       ├── filesystem.go
-│       └── filesystem_test.go
+│       ├── tool.go
+│       └── tool_test.go
 │
 ├── .gitignore
 ├── go.mod
@@ -2398,7 +2416,7 @@ The generated MCP test-server binary:
 cmd/mcp-test-server/mcp-test-server
 ```
 
-is local build output and is intentionally not included in the repository. It should remain ignored by Git.
+is local build output and is intentionally not included in the repository.
 
 The runtime-created session directory:
 
@@ -2440,6 +2458,12 @@ Run session tests:
 
 ```bash
 go test ./internal/session -v
+```
+
+Run database session tests:
+
+```bash
+go test ./internal/session -run Database -v
 ```
 
 ---
@@ -2498,35 +2522,20 @@ The current workflow performs:
 
 ```text
 Checkout
-
    │
-
    ▼
-
 Setup Go
-
    │
-
    ▼
-
 Check Formatting
-
    │
-
    ▼
-
 Build MCP Test Server
-
    │
-
    ▼
-
 go test -v ./...
-
    │
-
    ▼
-
 go vet ./...
 ```
 
@@ -2651,17 +2660,19 @@ All tools are exposed through the common Tool abstraction.
 
 Session storage is separated from the Agent runtime.
 
-This allows different storage implementations to be introduced without rewriting Agent execution.
-
-Potential storage backends include:
+Current storage backends include:
 
 ```text
 In-Memory
-
 File
-
 Database
+```
 
+This allows different storage implementations to be introduced without rewriting Agent execution.
+
+Future storage backends may include:
+
+```text
 Remote Storage
 ```
 
@@ -2721,8 +2732,6 @@ Additional Credential Backends
 Additional Session Backends
 
 Remote MCP Servers
-
-Database-backed Sessions
 ```
 
 ---
@@ -2766,9 +2775,11 @@ Database-backed Sessions
 | Session import                        | Implemented |
 | In-memory session store               | Implemented |
 | File-based session store              | Implemented |
+| Database-backed session store         | Implemented |
 | Persistent Agent conversation history | Implemented |
 | Automatic session persistence         | Implemented |
-| Atomic session persistence            | Implemented |
+| Atomic file persistence               | Implemented |
+| Transactional database persistence    | Implemented |
 | Default session restoration           | Implemented |
 | Active session switching on creation  | Implemented |
 | Interactive CLI                       | Implemented |
@@ -2784,45 +2795,12 @@ Database-backed Sessions
 | Go formatting checks                  | Implemented |
 | Go vet checks                         | Implemented |
 | GitHub Actions CI                     | Implemented |
-| Database-backed sessions              | Planned     |
 | Additional providers                  | Planned     |
 | Expanded MCP functionality            | Planned     |
 
 ---
 
 # Roadmap
-
-## Improved Persistence
-
-The current file-based persistence is implemented using atomic session-file writes.
-
-The next session-related improvement is:
-
-```text
-Database-backed Sessions
-```
-
-The persistence architecture is being approached incrementally:
-
-```text
-Current File-Based Persistence
-
-        │
-
-        ▼
-
-Atomic File Persistence
-
-        │
-
-        ▼
-
-Database-Backed Sessions
-```
-
-The existing `SessionStore` abstraction allows future storage implementations to be introduced without changing the Agent runtime.
-
----
 
 ## Improved MCP Support
 
@@ -2887,77 +2865,41 @@ A simplified native tool execution looks like:
 
 ```text
 User
-
  │
-
  │ "What is 10 + 20?"
-
  ▼
-
 CLI
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Ollama Provider
-
  │
-
  ▼
-
 Local Model
-
  │
-
  │ Tool Call
-
  ▼
-
 Tool Registry
-
  │
-
  ▼
-
 Calculator
-
  │
-
  │ 10 + 20
-
  ▼
-
 30
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Ollama Provider
-
  │
-
  ▼
-
 Final Response
-
  │
-
  ▼
-
 CLI
 ```
 
@@ -2965,67 +2907,36 @@ A simplified MCP tool execution looks like:
 
 ```text
 User
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Ollama
-
  │
-
  │ Tool Call
-
  ▼
-
 Tool Registry
-
  │
-
  ▼
-
 MCP Adapter
-
  │
-
  ▼
-
 MCP Client Session
-
  │
-
  ▼
-
 MCP Server
-
  │
-
  ▼
-
 Tool Result
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Ollama
-
  │
-
  ▼
-
 Final Response
 ```
 
@@ -3033,115 +2944,67 @@ A simplified session-aware flow looks like:
 
 ```text
 User
-
  │
-
  ▼
-
 CLI
-
  │
-
  ▼
-
 Active Session
-
  │
-
  ├── ID
-
  ├── CreatedAt
-
  ├── UpdatedAt
-
  ├── Metadata
-
  └── Messages
-
  │
-
  ▼
-
 Agent
-
  │
-
  ▼
-
 Provider
-
  │
-
  ▼
-
 Tool Execution
-
  │
-
  ▼
-
 Updated Session
-
  │
-
  ▼
-
 Session Store
-
  │
-
- ▼
-
-Atomic File Persistence
-
+ ├── FileSessionStore
+ │      │
+ │      ▼
+ │   Atomic File Persistence
  │
-
- ▼
-
-Persistent Storage
+ └── DatabaseSessionStore
+        │
+        ▼
+     SQLite Transaction
 ```
 
 A session creation flow looks like:
 
 ```text
 User
-
  │
-
  │ session create project-a
-
  ▼
-
 CLI
-
  │
-
  ▼
-
 NewSession
-
  │
-
  ▼
-
 Session Store
-
  │
-
  ▼
-
 Agent.SetSession
-
  │
-
  ▼
-
 Active Session
-
  │
-
  ▼
-
 Agent Runtime
 ```
 
