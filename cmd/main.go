@@ -60,6 +60,22 @@ func loadConfig() (*configpkg.Config, error) {
 	return nil, lastErr
 }
 
+// getConfigPath finds the existing configuration file path.
+func getConfigPath() (string, error) {
+	configPaths := []string{
+		"config/config.json",
+		"../config/config.json",
+	}
+
+	for _, path := range configPaths {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("config file not found")
+}
+
 func selectModel(
 	providerClient providerpkg.Provider,
 	configuredModel string,
@@ -192,6 +208,7 @@ func handleCommand(
 	currentSession **sessionpkg.Session,
 	sessionStore sessionpkg.Store,
 	agentClient *agentpkg.Agent,
+	appConfig *configpkg.Config,
 	output io.Writer,
 ) CommandResult {
 	parts := strings.Fields(input)
@@ -204,7 +221,7 @@ func handleCommand(
 	case "help":
 		fmt.Fprintln(
 			output,
-			"Available commands: help, exit, model, session, clear",
+			"Available commands: help, exit, model, session, clear, mcp",
 		)
 		return CommandHandled
 
@@ -343,6 +360,172 @@ func handleCommand(
 			return CommandHandled
 		}
 
+	case "mcp":
+		if len(parts) < 2 {
+			fmt.Fprintln(
+				output,
+				"Usage: mcp list | mcp add <name> <command> [args...] | mcp remove <name>",
+			)
+			return CommandHandled
+		}
+
+		switch parts[1] {
+		case "list":
+			if len(appConfig.MCP.Servers) == 0 {
+				fmt.Fprintln(output, "No MCP servers configured.")
+				return CommandHandled
+			}
+
+			fmt.Fprintln(output, "MCP servers:")
+
+			for _, server := range appConfig.MCP.Servers {
+				fmt.Fprintf(
+					output,
+					"- %s: %s",
+					server.Name,
+					server.Command,
+				)
+
+				if len(server.Args) > 0 {
+					fmt.Fprintf(
+						output,
+						" %s",
+						strings.Join(server.Args, " "),
+					)
+				}
+
+				fmt.Fprintln(output)
+			}
+
+			return CommandHandled
+
+		case "add":
+			if len(parts) < 4 {
+				fmt.Fprintln(
+					output,
+					"Usage: mcp add <name> <command> [args...]",
+				)
+				return CommandHandled
+			}
+
+			name := parts[2]
+			command := parts[3]
+			args := parts[4:]
+
+			for _, server := range appConfig.MCP.Servers {
+				if server.Name == name {
+					fmt.Fprintf(
+						output,
+						"MCP server %q already exists.\n",
+						name,
+					)
+					return CommandHandled
+				}
+			}
+
+			server := configpkg.MCPServer{
+				Name:    name,
+				Command: command,
+				Args:    args,
+			}
+
+			appConfig.MCP.Servers = append(
+				appConfig.MCP.Servers,
+				server,
+			)
+
+			configPath, err := getConfigPath()
+			if err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to find config file: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			if err := configpkg.Save(configPath, appConfig); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to save config: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			fmt.Fprintf(
+				output,
+				"Added MCP server: %s\n",
+				name,
+			)
+
+			return CommandHandled
+
+		case "remove":
+			if len(parts) != 3 {
+				fmt.Fprintln(
+					output,
+					"Usage: mcp remove <name>",
+				)
+				return CommandHandled
+			}
+
+			name := parts[2]
+			serverIndex := -1
+
+			for index, server := range appConfig.MCP.Servers {
+				if server.Name == name {
+					serverIndex = index
+					break
+				}
+			}
+
+			if serverIndex == -1 {
+				fmt.Fprintf(
+					output,
+					"MCP server %q not found.\n",
+					name,
+				)
+				return CommandHandled
+			}
+
+			appConfig.MCP.Servers = append(
+				appConfig.MCP.Servers[:serverIndex],
+				appConfig.MCP.Servers[serverIndex+1:]...,
+			)
+
+			configPath, err := getConfigPath()
+			if err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to find config file: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			if err := configpkg.Save(configPath, appConfig); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to save config: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
+			fmt.Fprintf(
+				output,
+				"Removed MCP server: %s\n",
+				name,
+			)
+
+			return CommandHandled
+
+		default:
+			fmt.Fprintln(output, "Unknown mcp command.")
+			return CommandHandled
+		}
+
 	case "clear":
 		clearTerminal(output)
 		return CommandHandled
@@ -403,7 +586,10 @@ func main() {
 		key, err := credStore.Get(appConfig.Provider.Name)
 		if err != nil {
 			if errors.Is(err, credentialspkg.ErrCredentialNotFound) {
-				fmt.Printf("Error: The %q provider requires an API key, but it was not found.\n", appConfig.Provider.Name)
+				fmt.Printf(
+					"Error: The %q provider requires an API key, but it was not found.\n",
+					appConfig.Provider.Name,
+				)
 				fmt.Println("Please ensure your credentials are configured correctly.")
 			} else {
 				fmt.Println("Failed to read credentials:", err)
@@ -496,6 +682,7 @@ func main() {
 			&currentSession,
 			sessionStore,
 			agentClient,
+			appConfig,
 			os.Stdout,
 		)
 
