@@ -47,6 +47,21 @@ func Load(path string) (*Config, error) {
 	return &config, nil
 }
 
+func Save(path string, config *Config) error {
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
+	}
+
+	data = append(data, '\n')
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return nil
+}
+
 func (c *Config) Validate() error {
 	if c.Provider.Name == "" {
 		return fmt.Errorf("provider name is required")
