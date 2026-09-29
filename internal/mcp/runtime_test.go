@@ -234,6 +234,67 @@ func TestRuntimeConnectServerDuplicate(t *testing.T) {
 	}
 }
 
+// Tests disconnecting an MCP server.
+func TestRuntimeDisconnectServer(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to determine current test file")
+	}
+
+	projectRoot := filepath.Join(filepath.Dir(currentFile), "..", "..")
+	command := filepath.Join(projectRoot, "cmd", "mcp-test-server", "mcp-test-server")
+
+	if _, err := os.Stat(command); err != nil {
+		t.Fatalf("test MCP server executable not found: %v", err)
+	}
+
+	ctx := context.Background()
+	registry := toolspkg.NewToolRegistry()
+	mcpRuntime := NewRuntime()
+
+	err := mcpRuntime.ConnectServer(
+		ctx,
+		"test-server",
+		command,
+		[]string{},
+		registry,
+	)
+	if err != nil {
+		t.Fatalf("expected server connection to succeed, got error: %v", err)
+	}
+
+	if len(mcpRuntime.sessions) != 1 {
+		t.Fatalf("expected 1 session before disconnect, got %d", len(mcpRuntime.sessions))
+	}
+
+	err = mcpRuntime.DisconnectServer("test-server")
+	if err != nil {
+		t.Fatalf("expected server disconnect to succeed, got error: %v", err)
+	}
+
+	if len(mcpRuntime.sessions) != 0 {
+		t.Fatalf("expected 0 sessions after disconnect, got %d", len(mcpRuntime.sessions))
+	}
+
+	if _, exists := mcpRuntime.sessions["test-server"]; exists {
+		t.Fatal("expected test-server session to be removed")
+	}
+}
+
+// Tests disconnecting an MCP server that is not connected.
+func TestRuntimeDisconnectServerNotConnected(t *testing.T) {
+	mcpRuntime := NewRuntime()
+
+	err := mcpRuntime.DisconnectServer("invalid-server")
+	if err == nil {
+		t.Fatal("expected disconnect error, got nil")
+	}
+
+	if len(mcpRuntime.sessions) != 0 {
+		t.Fatalf("expected 0 sessions, got %d", len(mcpRuntime.sessions))
+	}
+}
+
 // Tests closing an MCP runtime.
 func TestRuntimeClose(t *testing.T) {
 	mcpRuntime := NewRuntime()
