@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -725,6 +726,32 @@ func TestHandleCommand(t *testing.T) {
 					)
 				}
 
+				_, currentFile, _, ok := runtime.Caller(0)
+				if !ok {
+					t.Fatal("failed to determine current test file")
+				}
+
+				projectRoot := filepath.Join(
+					filepath.Dir(currentFile),
+					"..",
+				)
+
+				testServerCommand = filepath.Join(
+					projectRoot,
+					"cmd",
+					"mcp-test-server",
+					"mcp-test-server",
+				)
+
+				if _, err := os.Stat(testServerCommand); err != nil {
+					t.Fatalf(
+						"test MCP server executable not found: %v",
+						err,
+					)
+				}
+
+				testCase.mcpServers[0].Command = testServerCommand
+
 				initialConfig := &configpkg.Config{
 					Provider: configpkg.Provider{
 						Name:     "ollama",
@@ -737,12 +764,28 @@ func TestHandleCommand(t *testing.T) {
 					},
 				}
 
+				appConfig = initialConfig
+
 				if err := configpkg.Save(
 					filepath.Join("config", "config.json"),
 					initialConfig,
 				); err != nil {
 					t.Fatalf(
 						"failed to create initial config: %v",
+						err,
+					)
+				}
+
+				err = mcpRuntime.ConnectServer(
+					context.Background(),
+					"test-server",
+					testServerCommand,
+					[]string{},
+					registry,
+				)
+				if err != nil {
+					t.Fatalf(
+						"failed to connect test MCP server: %v",
 						err,
 					)
 				}
@@ -806,6 +849,13 @@ func TestHandleCommand(t *testing.T) {
 			}
 
 			if isMCPRemoveTest {
+				err := mcpRuntime.DisconnectServer("test-server")
+				if err == nil {
+					t.Fatal(
+						"expected test-server session to already be disconnected",
+					)
+				}
+
 				savedConfig, err := configpkg.Load(
 					filepath.Join("config", "config.json"),
 				)
