@@ -10,6 +10,7 @@ It provides:
 * Native tool execution
 * MCP integration
 * MCP server lifecycle management
+* MCP server CLI management
 * Credential storage
 * Session management and persistence
 * Interactive CLI
@@ -36,6 +37,11 @@ The project currently supports:
 * MCP tool adaptation into the native tool system
 * MCP tool registration into the Tool Registry
 * MCP runtime/session lifecycle management
+* MCP server configuration through the CLI
+* MCP server listing through the CLI
+* MCP server addition through the CLI
+* MCP server removal through the CLI
+* Persistent MCP server configuration
 * Credential storage and retrieval
 * In-memory session storage
 * File-based session storage
@@ -65,7 +71,7 @@ The core runtime is functional.
 
 Current development is focused on:
 
-* Expanding MCP functionality
+* Improving MCP capabilities
 * Improving CLI functionality
 * Adding additional providers
 * Increasing runtime extensibility
@@ -113,6 +119,20 @@ ollama
 openai
 ```
 
+Example:
+
+```text
+NewProvider("ollama", "http://localhost:11434", "")
+```
+
+This creates an Ollama provider.
+
+For a provider requiring credentials:
+
+```text
+NewProvider("openai", "https://api.openai.com", apiKey)
+```
+
 ### Provider API
 
 The common Provider interface exposes:
@@ -123,6 +143,24 @@ Chat
 
 `Chat` sends a provider-neutral chat request and returns the model response, including any requested tool calls.
 
+Example:
+
+```text
+Chat(request)
+```
+
+Conceptually:
+
+```text
+Provider
+   │
+   ▼
+Chat(request)
+   │
+   ▼
+Model Response
+```
+
 Local model providers can additionally implement:
 
 ```text
@@ -132,7 +170,19 @@ PullModel
 
 `ListModels` returns locally available models where supported.
 
+Example:
+
+```text
+ListModels()
+```
+
 `PullModel` downloads or prepares a local model where supported.
+
+Example:
+
+```text
+PullModel("llama3.1")
+```
 
 ---
 
@@ -170,6 +220,14 @@ SetSession(session)
 
 Assigns a Session to the Agent and makes that Session the active source of conversation history.
 
+Example:
+
+```go
+err := agent.SetSession(session)
+```
+
+After this operation, Agent conversation messages are associated with the assigned Session.
+
 ### `GetMessages`
 
 ```text
@@ -177,6 +235,14 @@ GetMessages()
 ```
 
 Returns the messages associated with the Agent's active conversation or assigned Session.
+
+Example:
+
+```go
+messages := agent.GetMessages()
+```
+
+The returned messages can then be used by the runtime when constructing a Provider request.
 
 ---
 
@@ -188,8 +254,11 @@ Tools expose a common interface containing:
 
 ```text
 Name
+
 Description
+
 Execute
+
 Schema
 ```
 
@@ -207,17 +276,43 @@ The same abstraction is used for:
 
 Returns the unique name used to identify the tool.
 
+Example:
+
+```text
+tool.Name()
+```
+
 #### `Description`
 
 Returns a human-readable description of what the tool does.
+
+Example:
+
+```text
+tool.Description()
+```
 
 #### `Execute`
 
 Executes the tool using the provided arguments and returns the tool result.
 
+Example:
+
+```text
+tool.Execute(ctx, arguments)
+```
+
+The exact arguments depend on the Tool implementation.
+
 #### `Schema`
 
 Returns the parameter schema used by the model to understand the tool's expected arguments.
+
+Example:
+
+```text
+tool.Schema()
+```
 
 ---
 
@@ -229,10 +324,15 @@ It supports:
 
 ```text
 Register
+
 Get
+
 Has
+
 List
+
 Remove
+
 Schemas
 ```
 
@@ -246,6 +346,12 @@ Register(tool)
 
 Adds a tool to the registry using its tool name.
 
+Example:
+
+```text
+registry.Register(calculator)
+```
+
 ### `Get`
 
 ```text
@@ -253,6 +359,12 @@ Get(name)
 ```
 
 Retrieves a registered tool by name.
+
+Example:
+
+```text
+tool := registry.Get("calculator")
+```
 
 ### `Has`
 
@@ -262,6 +374,12 @@ Has(name)
 
 Checks whether a tool with the specified name is registered.
 
+Example:
+
+```text
+exists := registry.Has("calculator")
+```
+
 ### `List`
 
 ```text
@@ -269,6 +387,12 @@ List()
 ```
 
 Returns all registered tools.
+
+Example:
+
+```text
+tools := registry.List()
+```
 
 ### `Remove`
 
@@ -278,6 +402,12 @@ Remove(name)
 
 Removes a registered tool by name.
 
+Example:
+
+```text
+registry.Remove("calculator")
+```
+
 ### `Schemas`
 
 ```text
@@ -285,6 +415,12 @@ Schemas()
 ```
 
 Returns the schemas of registered tools so they can be supplied to a model provider.
+
+Example:
+
+```text
+schemas := registry.Schemas()
+```
 
 The registry provides the common execution layer used by both native tools and MCP tools.
 
@@ -342,6 +478,14 @@ Execute
 
 runs the requested command and returns its output or an execution error.
 
+Example:
+
+```text
+Execute("ls -la")
+```
+
+The command is executed through the Shell tool rather than being directly coupled to the Agent.
+
 ---
 
 ## Filesystem
@@ -357,6 +501,14 @@ Execute
 ```
 
 performs the requested filesystem operation and returns the resulting data or an error.
+
+Example:
+
+```text
+Execute(...)
+```
+
+The exact operation and arguments depend on the filesystem tool request.
 
 ---
 
@@ -375,6 +527,7 @@ The MCP layer provides:
 * MCP tool adaptation
 * MCP tool registration
 * MCP server lifecycle management
+* MCP server CLI configuration
 
 MCP tools are converted into the existing `tools.Tool` interface so the Agent does not require a separate execution path for MCP tools.
 
@@ -386,32 +539,59 @@ The MCP flow is:
 
 ```text
 MCP Server
+
     │
+
     ▼
+
 Command Transport
+
     │
+
     ▼
+
 MCP Client
+
     │
+
     ▼
+
 Client Session
+
     │
+
     ▼
+
 List Tools
+
     │
+
     ▼
+
 MCP Tool
+
     │
+
     ▼
+
 Tool Adapter
+
     │
+
     ▼
+
 Native Tool Interface
+
     │
+
     ▼
+
 Tool Registry
+
     │
+
     ▼
+
 Agent
 ```
 
@@ -438,8 +618,11 @@ The main operations are:
 
 ```text
 NewClient
+
 Connect
+
 ConnectCommand
+
 ListTools
 ```
 
@@ -451,7 +634,13 @@ ListTools
 NewClient(...)
 ```
 
-Creates a new MCP client using the supplied client configuration.
+Creates a new MCP client using the configured client implementation.
+
+Example:
+
+```text
+client := mcp.NewClient()
+```
 
 ### `Connect`
 
@@ -461,6 +650,14 @@ Connect(...)
 
 Establishes an MCP connection using the configured transport.
 
+Example:
+
+```text
+session, err := client.Connect(ctx, transport)
+```
+
+The returned ClientSession is used for subsequent MCP operations.
+
 ### `ConnectCommand`
 
 ```text
@@ -469,6 +666,16 @@ ConnectCommand(...)
 
 Starts a local MCP server process and establishes an MCP connection using command-based transport.
 
+Example:
+
+```text
+session, err := client.ConnectCommand(
+    ctx,
+    "./mcp-server",
+    []string{"--port", "8080"},
+)
+```
+
 ### `ListTools`
 
 ```text
@@ -476,6 +683,12 @@ ListTools(...)
 ```
 
 Retrieves the tools exposed by the connected MCP server.
+
+Example:
+
+```text
+tools, err := client.ListTools(ctx, session)
+```
 
 ---
 
@@ -495,17 +708,29 @@ Conceptually:
 
 ```text
 Agent Harness
+
      │
+
      ▼
+
 exec.CommandContext
+
      │
+
      ▼
+
 MCP Test / External Server
+
      │
+
      ▼
+
 stdin/stdout
+
      │
+
      ▼
+
 MCP Protocol
 ```
 
@@ -538,11 +763,23 @@ The MCP wrapper exposes the remote MCP tool's:
 
 ```text
 Name
+
 Description
+
 Schema
 ```
 
 These allow the tool to participate in the native Tool abstraction.
+
+Examples:
+
+```text
+tool.Name()
+
+tool.Description()
+
+tool.Schema()
+```
 
 ### `Execute`
 
@@ -551,6 +788,12 @@ Execute(...)
 ```
 
 Sends the supplied arguments to the MCP server through the active MCP client session and returns the remote tool result.
+
+Example:
+
+```text
+result, err := tool.Execute(ctx, arguments)
+```
 
 ---
 
@@ -568,20 +811,35 @@ Conceptually:
 
 ```text
 MCP SDK Tool
+
      │
+
      ▼
+
 MCP Tool Wrapper
+
      │
+
      ▼
+
 Tool Adapter
+
      │
+
      ▼
+
 tools.Tool
+
      │
+
      ▼
+
 Tool Registry
+
      │
+
      ▼
+
 Agent
 ```
 
@@ -599,9 +857,24 @@ This includes:
 
 ```text
 Name
+
 Description
+
 Schema
+
 Execute
+```
+
+Examples:
+
+```text
+adapter.Name()
+
+adapter.Description()
+
+adapter.Schema()
+
+adapter.Execute(ctx, arguments)
 ```
 
 ---
@@ -626,6 +899,30 @@ RegisterTools
 ```
 
 discovers available MCP tools and adds them to the native Tool Registry.
+
+Example:
+
+```text
+RegisterTools(ctx, session, registry)
+```
+
+Conceptually:
+
+```text
+MCP Session
+     │
+     ▼
+ListTools
+     │
+     ▼
+Create MCP Tools
+     │
+     ▼
+Create Adapters
+     │
+     ▼
+Registry.Register
+```
 
 ---
 
@@ -657,13 +954,31 @@ The runtime keeps the client sessions alive because MCP Tool Adapters use those 
 
 Creates the runtime with the required Tool Registry and MCP configuration.
 
+Conceptually:
+
+```text
+NewRuntime(config, registry)
+```
+
 ### Server Connection
 
 Connects to configured MCP servers and creates the required MCP client sessions.
 
+Conceptually:
+
+```text
+runtime.Connect(...)
+```
+
 ### Tool Registration
 
 Discovers MCP tools and registers them into the native Tool Registry.
+
+Conceptually:
+
+```text
+runtime.RegisterTools(...)
+```
 
 ### `Close`
 
@@ -673,6 +988,12 @@ Close()
 
 Closes active MCP sessions and releases MCP runtime resources during application shutdown.
 
+Example:
+
+```text
+defer runtime.Close()
+```
+
 ---
 
 # MCP Runtime Lifecycle
@@ -681,38 +1002,71 @@ The lifecycle is:
 
 ```text
 Application Start
+
        │
+
        ▼
+
 Load Configuration
+
        │
+
        ▼
+
 MCP Runtime
+
        │
+
        ├── Start MCP Server
+
        ├── Connect MCP Client
+
        ├── Create Session
+
        ├── Discover Tools
+
        └── Register Tools
+
        │
+
        ▼
+
 Application Running
+
        │
+
        ▼
+
 Agent Executes MCP Tool
+
        │
+
        ▼
+
 MCP Client Session
+
        │
+
        ▼
+
 MCP Server
+
        │
+
        ▼
+
 Tool Result
+
        │
+
        ▼
+
 Application Shutdown
+
        │
+
        ▼
+
 Close MCP Sessions
 ```
 
@@ -748,7 +1102,9 @@ Each MCP server contains:
 
 ```text
 Name
+
 Command
+
 Args
 ```
 
@@ -762,6 +1118,223 @@ For example:
   "command": "example-mcp-server",
   "args": ["--port", "8080"]
 }
+```
+
+---
+
+# MCP CLI Server Management
+
+MCP servers can be managed directly through the interactive CLI.
+
+The CLI currently supports:
+
+```text
+mcp list
+mcp add <name> <command> [args...]
+mcp remove <name>
+```
+
+These commands modify the MCP server configuration stored in the application's configuration file.
+
+The MCP CLI currently manages **persistent configuration**. Adding or removing a server does not dynamically attach or detach the server from an already-running MCP runtime.
+
+Configured servers are loaded and connected when the application starts.
+
+## `mcp`
+
+Displays the available MCP CLI operations.
+
+```text
+mcp
+```
+
+Example output:
+
+```text
+Usage: mcp list | mcp add <name> <command> [args...] | mcp remove <name>
+```
+
+---
+
+## `mcp list`
+
+Lists all configured MCP servers.
+
+```text
+mcp list
+```
+
+Example:
+
+```text
+MCP servers:
+- test-server: ./test-server --port 8080
+- filesystem: npx -y @modelcontextprotocol/server-filesystem /tmp
+```
+
+If no MCP servers are configured:
+
+```text
+No MCP servers configured.
+```
+
+The command reads the currently loaded MCP configuration and displays each configured server's name, command, and arguments.
+
+---
+
+## `mcp add`
+
+Adds a new MCP server to the configuration.
+
+Syntax:
+
+```text
+mcp add <name> <command> [args...]
+```
+
+Example:
+
+```text
+mcp add test-server ./test-server --port 8080
+```
+
+Another example using the repository's MCP test server:
+
+```text
+mcp add test-server ./cmd/mcp-test-server/mcp-test-server
+```
+
+For a server requiring multiple arguments:
+
+```text
+mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /tmp
+```
+
+The command performs the following operations:
+
+1. Reads the current MCP configuration.
+2. Checks whether the server name already exists.
+3. Creates a new `MCPServer` configuration entry.
+4. Stores the command.
+5. Stores all remaining arguments in `Args`.
+6. Saves the updated configuration.
+
+Example output:
+
+```text
+Added MCP server: test-server
+```
+
+If the server already exists:
+
+```text
+MCP server "test-server" already exists.
+```
+
+### Important
+
+`mcp add` currently updates the persistent configuration only.
+
+It does **not** dynamically connect the new server to the MCP runtime of the currently running application.
+
+The server becomes part of the startup configuration and will be connected when Agent Harness is started again.
+
+---
+
+## `mcp remove`
+
+Removes an MCP server from the configuration.
+
+Syntax:
+
+```text
+mcp remove <name>
+```
+
+Example:
+
+```text
+mcp remove test-server
+```
+
+Example output:
+
+```text
+Removed MCP server: test-server
+```
+
+The command:
+
+1. Searches the configured MCP servers by name.
+2. Finds the matching server.
+3. Removes it from the configuration.
+4. Saves the updated configuration.
+
+If the server does not exist:
+
+```text
+MCP server "missing-server" not found.
+```
+
+If the name is missing:
+
+```text
+Usage: mcp remove <name>
+```
+
+### Important
+
+`mcp remove` currently updates persistent configuration only.
+
+It does **not** dynamically close an already-active MCP session.
+
+Active MCP runtime sessions are closed during application shutdown.
+
+---
+
+# MCP CLI Workflow
+
+A typical MCP configuration workflow is:
+
+### 1. Add a server
+
+```text
+mcp add test-server ./test-server --port 8080
+```
+
+### 2. Verify the configuration
+
+```text
+mcp list
+```
+
+Example:
+
+```text
+MCP servers:
+- test-server: ./test-server --port 8080
+```
+
+### 3. Restart Agent Harness
+
+The configured MCP server is connected during application startup.
+
+### 4. Remove the server when no longer required
+
+```text
+mcp remove test-server
+```
+
+### 5. Verify removal
+
+```text
+mcp list
+```
+
+If it was the only server:
+
+```text
+No MCP servers configured.
 ```
 
 ---
@@ -875,10 +1448,15 @@ The runtime tests ensure that the runtime can:
 
 ```text
 Create Runtime
+
 Connect MCP Servers
+
 Discover MCP Tools
+
 Register Tools
+
 Keep Sessions
+
 Close Sessions
 ```
 
@@ -905,7 +1483,9 @@ The main credential operations are:
 
 ```text
 Set
+
 Get
+
 Delete
 ```
 
@@ -919,6 +1499,12 @@ Set(provider, key)
 
 Stores or updates the credential associated with a provider.
 
+Example:
+
+```text
+credentials.Set("openai", apiKey)
+```
+
 ### `Get`
 
 ```text
@@ -926,6 +1512,12 @@ Get(provider)
 ```
 
 Retrieves the stored credential for the specified provider.
+
+Example:
+
+```text
+key, err := credentials.Get("openai")
+```
 
 If no credential exists, the store returns a credential-not-found error.
 
@@ -936,6 +1528,12 @@ Delete(provider)
 ```
 
 Removes the stored credential associated with the provider.
+
+Example:
+
+```text
+credentials.Delete("openai")
+```
 
 The current file-based credential store uses:
 
@@ -1014,6 +1612,12 @@ Creates a new Session with:
 * An initialized metadata map
 * An initialized message list
 
+Example:
+
+```text
+session := NewSession("project-a")
+```
+
 ## `Rename`
 
 ```text
@@ -1024,6 +1628,12 @@ Updates the Session display name in metadata and updates `UpdatedAt`.
 
 The Session ID remains unchanged.
 
+Example:
+
+```text
+session.Rename("Backend Project")
+```
+
 ## `Export`
 
 ```text
@@ -1032,13 +1642,23 @@ Export()
 
 Serializes the complete Session into formatted JSON.
 
+Example:
+
+```text
+data, err := session.Export()
+```
+
 The exported data includes:
 
 ```text
 ID
+
 CreatedAt
+
 UpdatedAt
+
 Metadata
+
 Messages
 ```
 
@@ -1049,6 +1669,12 @@ Import(data)
 ```
 
 Restores a Session from serialized JSON data.
+
+Example:
+
+```text
+session, err := Import(data)
+```
 
 This allows Session data to be reconstructed independently from the active Session Store.
 
@@ -1062,6 +1688,12 @@ The rename operation is:
 
 ```text
 Rename
+```
+
+Example:
+
+```text
+session.Rename("Project Alpha")
 ```
 
 Renaming updates the Session metadata and `UpdatedAt` timestamp.
@@ -1082,15 +1714,25 @@ The export operation:
 Export
 ```
 
+Example:
+
+```text
+data, err := session.Export()
+```
+
 serializes the complete Session into formatted JSON.
 
 The exported data includes:
 
 ```text
 ID
+
 CreatedAt
+
 UpdatedAt
+
 Metadata
+
 Messages
 ```
 
@@ -1098,6 +1740,12 @@ The import operation:
 
 ```text
 Import
+```
+
+Example:
+
+```text
+session, err := Import(data)
 ```
 
 restores a Session from JSON.
@@ -1112,8 +1760,11 @@ The Session Store provides:
 
 ```text
 Set
+
 Get
+
 Delete
+
 List
 ```
 
@@ -1121,7 +1772,9 @@ The project currently provides three implementations:
 
 ```text
 MemoryStore
+
 FileSessionStore
+
 DatabaseSessionStore
 ```
 
@@ -1137,6 +1790,12 @@ Set(session)
 
 Stores or updates a Session.
 
+Example:
+
+```text
+store.Set(session)
+```
+
 ### `Get`
 
 ```text
@@ -1144,6 +1803,12 @@ Get(id)
 ```
 
 Retrieves a Session by its ID.
+
+Example:
+
+```text
+session, err := store.Get("project-a")
+```
 
 ### `Delete`
 
@@ -1153,6 +1818,12 @@ Delete(id)
 
 Removes a Session by its ID.
 
+Example:
+
+```text
+store.Delete("project-a")
+```
+
 ### `List`
 
 ```text
@@ -1160,6 +1831,12 @@ List()
 ```
 
 Returns all available Sessions in the store.
+
+Example:
+
+```text
+sessions, err := store.List()
+```
 
 ---
 
@@ -1171,12 +1848,25 @@ It provides:
 
 ```text
 Set
+
 Get
+
 Delete
+
 List
 ```
 
 Changes are lost when the application exits.
+
+Example:
+
+```text
+store := MemoryStore
+store.Set(session)
+store.Get(session.ID)
+store.List()
+store.Delete(session.ID)
+```
 
 ---
 
@@ -1188,8 +1878,11 @@ It provides:
 
 ```text
 Set
+
 Get
+
 Delete
+
 List
 ```
 
@@ -1201,27 +1894,51 @@ Set(session)
 
 Serializes the Session to JSON and persists it using an atomic file-write process.
 
+Example:
+
+```text
+fileStore.Set(session)
+```
+
 The write flow is:
 
 ```text
 Session
+
    │
+
    ▼
+
 JSON Serialization
+
    │
+
    ▼
+
 Temporary File
+
    │
+
    ▼
+
 Write Session Data
+
    │
+
    ▼
+
 Close Temporary File
+
    │
+
    ▼
+
 Rename Temporary File
+
    │
+
    ▼
+
 Final Session File
 ```
 
@@ -1241,6 +1958,12 @@ Get(id)
 
 Reads the Session JSON file and reconstructs the Session object.
 
+Example:
+
+```text
+session, err := fileStore.Get("project-a")
+```
+
 ## `Delete`
 
 ```text
@@ -1249,6 +1972,12 @@ Delete(id)
 
 Removes the Session JSON file.
 
+Example:
+
+```text
+fileStore.Delete("project-a")
+```
+
 ## `List`
 
 ```text
@@ -1256,6 +1985,12 @@ List()
 ```
 
 Scans the Session directory, loads valid Session files, and returns the stored Sessions.
+
+Example:
+
+```text
+sessions, err := fileStore.List()
+```
 
 ---
 
@@ -1271,8 +2006,11 @@ It provides:
 
 ```text
 Set
+
 Get
+
 Delete
+
 List
 ```
 
@@ -1280,6 +2018,7 @@ The database store maintains two tables:
 
 ```text
 sessions
+
 messages
 ```
 
@@ -1313,14 +2052,25 @@ Set(session)
 
 Stores or updates a Session in the SQLite database.
 
+Example:
+
+```text
+databaseStore.Set(session)
+```
+
 The operation persists:
 
 ```text
 Session ID
+
 Creation timestamp
+
 Update timestamp
+
 Metadata
+
 Messages
+
 Tool calls
 ```
 
@@ -1338,14 +2088,25 @@ Get(id)
 
 Retrieves a Session from the SQLite database using its Session ID.
 
+Example:
+
+```text
+session, err := databaseStore.Get("project-a")
+```
+
 The operation restores:
 
 ```text
 Session ID
+
 Creation timestamp
+
 Update timestamp
+
 Metadata
+
 Messages
+
 Tool calls
 ```
 
@@ -1361,6 +2122,12 @@ Delete(id)
 
 Deletes a Session from the SQLite database using its Session ID.
 
+Example:
+
+```text
+databaseStore.Delete("project-a")
+```
+
 Because the `messages` table uses a foreign key with cascade deletion, deleting a Session also removes all messages associated with that Session.
 
 If the Session does not exist, the store returns a Session-not-found error.
@@ -1372,6 +2139,12 @@ List()
 ```
 
 Returns all Sessions stored in the SQLite database.
+
+Example:
+
+```text
+sessions, err := databaseStore.List()
+```
 
 Sessions are retrieved in creation order.
 
@@ -1406,13 +2179,21 @@ The database relationship is:
 
 ```text
 Session
+
    │
+
    │ 1
+
    ▼
+
 Messages
+
    │
+
    │ many
+
    ▼
+
 Session Messages
 ```
 
@@ -1438,7 +2219,9 @@ For example:
 .sessions/
 
 ├── default.json
+
 ├── project-a.json
+
 └── project-b.json
 ```
 
@@ -1654,17 +2437,21 @@ default
 
 # CLI Commands
 
-| Command               | Description                            |
-| --------------------- | -------------------------------------- |
-| `help`                | Show available commands                |
-| `model`               | Show the currently configured model    |
-| `session`             | Show the current session ID            |
-| `session create <id>` | Create and activate a new session      |
-| `session list`        | List stored sessions                   |
-| `session load <id>`   | Load and activate a stored session     |
-| `session delete <id>` | Delete a stored session                |
-| `clear`               | Clear the current conversation history |
-| `exit`                | Exit the CLI                           |
+| Command                              | Description                            |
+| ------------------------------------ | -------------------------------------- |
+| `help`                               | Show available commands                |
+| `model`                              | Show the currently configured model    |
+| `session`                            | Show the current session ID            |
+| `session create <id>`                | Create and activate a new session      |
+| `session list`                       | List stored sessions                   |
+| `session load <id>`                  | Load and activate a stored session     |
+| `session delete <id>`                | Delete a stored session                |
+| `clear`                              | Clear the current conversation history |
+| `mcp`                                | Show MCP command usage                 |
+| `mcp list`                           | List configured MCP servers            |
+| `mcp add <name> <command> [args...]` | Add and persist an MCP server          |
+| `mcp remove <name>`                  | Remove and persist an MCP server       |
+| `exit`                               | Exit the CLI                           |
 
 ---
 
@@ -1674,6 +2461,24 @@ Displays available CLI commands.
 
 ```text
 help
+```
+
+Example:
+
+```text
+Available commands:
+help
+model
+session
+session create <id>
+session list
+session load <id>
+session delete <id>
+clear
+mcp list
+mcp add <name> <command> [args...]
+mcp remove <name>
+exit
 ```
 
 ---
@@ -1690,6 +2495,13 @@ For Ollama, the model can also be overridden using:
 
 ```bash
 export OLLAMA_MODEL=your-model
+```
+
+Example:
+
+```text
+Model: llama3.1
+Source: config
 ```
 
 ---
@@ -1846,14 +2658,77 @@ is ignored by Git because it may contain local development settings.
 
 ---
 
+# Configuration Operations
+
+The configuration layer provides:
+
+```text
+Load
+
+Save
+
+Validate
+```
+
+## `Load`
+
+```text
+Load(path)
+```
+
+Reads and parses a configuration file.
+
+Example:
+
+```text
+config, err := config.Load("config/config.json")
+```
+
+The configuration is parsed and validated before being returned.
+
+## `Save`
+
+```text
+Save(path, config)
+```
+
+Serializes and writes a configuration to disk.
+
+Example:
+
+```text
+err := config.Save("config/config.json", config)
+```
+
+The configuration is written as formatted JSON.
+
+## `Validate`
+
+```text
+Validate()
+```
+
+Checks that required Provider configuration fields are present.
+
+Example:
+
+```text
+err := config.Validate()
+```
+
+---
+
 # Configuration Validation
 
 The configuration layer validates required Provider fields:
 
 ```text
 Provider Name
+
 Provider Model
+
 Provider Base URL
+
 Provider Endpoint
 ```
 
@@ -1885,6 +2760,12 @@ Chat(request)
 
 Sends a provider-neutral chat request and returns the provider response.
 
+Example:
+
+```text
+response, err := provider.Chat(request)
+```
+
 ### `ListModels`
 
 ```text
@@ -1893,6 +2774,12 @@ ListModels()
 
 Lists models available from providers that support local model management.
 
+Example:
+
+```text
+models, err := provider.ListModels()
+```
+
 ### `PullModel`
 
 ```text
@@ -1900,6 +2787,12 @@ PullModel(name)
 ```
 
 Downloads or prepares a local model where the provider supports model management.
+
+Example:
+
+```text
+err := provider.PullModel("llama3.1")
+```
 
 Not every Provider implements the local model management interface.
 
@@ -1969,6 +2862,12 @@ This keeps credential handling separate from provider-specific request logic.
 
 Sends a chat request to the configured OpenAI-compatible API endpoint and converts the response into the common Provider response type.
 
+Example:
+
+```text
+provider.Chat(request)
+```
+
 ### Tool Call Handling
 
 Converts model-generated tool calls into the common:
@@ -1978,6 +2877,21 @@ ToolCall
 ```
 
 representation used by the Agent runtime.
+
+Example flow:
+
+```text
+OpenAI Response
+      │
+      ▼
+Tool Call
+      │
+      ▼
+Common ToolCall
+      │
+      ▼
+Agent Runtime
+```
 
 ---
 
@@ -2005,6 +2919,16 @@ NewProvider(name, baseURL, apiKey)
 
 Creates the appropriate Provider implementation based on the provider name.
 
+Example:
+
+```text
+provider, err := NewProvider(
+    "ollama",
+    "http://localhost:11434",
+    "",
+)
+```
+
 Currently supported providers are:
 
 ```text
@@ -2026,10 +2950,17 @@ RequiresAPIKey(name)
 
 Determines whether a provider requires a stored API credential before it can be initialized.
 
+Example:
+
+```text
+RequiresAPIKey("openai")
+```
+
 Currently:
 
 ```text
 ollama → false
+
 openai → true
 ```
 
@@ -2055,21 +2986,37 @@ It handles repeated:
 
 ```text
 Model Request
+
       │
+
       ▼
+
 Model Response
+
       │
+
       ├── Final Response
+
       │
+
       └── Tool Call
+
               │
+
               ▼
+
         Tool Execution
+
               │
+
               ▼
+
         Tool Result
+
               │
+
               ▼
+
         Model Request
 ```
 
@@ -2092,6 +3039,12 @@ Run
 ```
 
 executes the Agent/provider/tool loop until a final response or execution error is produced.
+
+Example:
+
+```text
+response, err := orchestrator.Run(ctx, input)
+```
 
 ---
 
@@ -2175,7 +3128,9 @@ Current storage backends are:
 
 ```text
 In-Memory
+
 File
+
 Database
 ```
 
@@ -2187,42 +3142,79 @@ Database
 
 ```text
 User
+
  │
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  ▼
+
 Model
+
  │
+
  ├── Normal response ──────────► Agent ──► User
+
  │
+
  └── Tool call
+
        │
+
        ▼
+
    Tool Registry
+
        │
+
        ▼
+
    Tool Execution
+
        │
+
        ▼
+
    Tool Result
+
        │
+
        ▼
+
      Agent
+
        │
+
        ▼
+
     Provider
+
        │
+
        ▼
+
     Final Response
+
        │
+
        ▼
+
       User
 ```
 
@@ -2232,36 +3224,67 @@ Model
 
 ```text
 User
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  │ Tool Call
+
  ▼
+
 Tool Registry
+
  │
+
  ▼
+
 MCP Tool Adapter
+
  │
+
  ▼
+
 MCP Client Session
+
  │
+
  ▼
+
 MCP Server
+
  │
+
  ▼
+
 Tool Result
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  ▼
+
 Final Response
 ```
 
@@ -2271,44 +3294,83 @@ Final Response
 
 ```text
 CLI
+
  │
+
  ▼
+
 Session Store
+
  │
+
  ├── Create
+
  ├── Get
+
  ├── Set
+
  └── Delete
+
  │
+
  ▼
+
 Session
+
  │
+
  ├── ID
+
  ├── CreatedAt
+
  ├── UpdatedAt
+
  ├── Metadata
+
  └── Messages
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider / Tools
+
  │
+
  ▼
+
 Updated Session
+
  │
+
  ▼
+
 Session Store
+
  │
+
  ├── File Store
+
  │      │
+
  │      ▼
+
  │   Atomic File Persistence
+
  │
+
  └── Database Store
+
         │
+
         ▼
+
      SQLite Transaction
 ```
 
@@ -2318,95 +3380,185 @@ Session Store
 
 ```text
 Agent-harness/
+
 │
+
 ├── .github/
+
 │   └── workflows/
+
 │       └── go.yml
+
 │
+
 ├── cmd/
+
 │   ├── main.go
+
 │   ├── main_test.go
+
 │   │
+
 │   └── mcp-test-server/
+
 │       └── main.go
+
 │
+
 ├── config/
+
 │   ├── config.go
+
 │   ├── config_test.go
+
 │   ├── config.example.json
+
 │   └── config.json
+
 │
+
 ├── filesystem/
+
 │   ├── filesystem.go
+
 │   └── filesystem_test.go
+
 │
+
 ├── shell/
+
 │   ├── shell.go
+
 │   └── shell_test.go
+
 │
+
 ├── internal/
+
 │   │
+
 │   ├── agent/
+
 │   │   ├── agent.go
+
 │   │   ├── agent_test.go
+
 │   │   ├── history.go
+
 │   │   └── history_test.go
+
 │   │
+
 │   ├── credentials/
+
 │   │   ├── credentials.go
+
 │   │   └── credentials_test.go
+
 │   │
+
 │   ├── mcp/
+
 │   │   ├── adapter.go
+
 │   │   ├── adapter_test.go
+
 │   │   ├── client.go
+
 │   │   ├── client_test.go
+
 │   │   ├── runtime.go
+
 │   │   ├── runtime_test.go
+
 │   │   ├── tool.go
+
 │   │   └── tool_test.go
+
 │   │
+
 │   ├── orchestrator/
+
 │   │   ├── orchestrator.go
+
 │   │   └── orchestrator_test.go
+
 │   │
+
 │   ├── provider/
+
 │   │   ├── factory.go
+
 │   │   ├── factory_test.go
+
 │   │   ├── openai.go
+
 │   │   ├── openai_test.go
+
 │   │   ├── ollama.go
+
 │   │   ├── ollama_test.go
+
 │   │   └── provider.go
+
 │   │
+
 │   ├── session/
+
 │   │   ├── database_store.go
+
 │   │   ├── database_store_test.go
+
 │   │   ├── file_store.go
+
 │   │   ├── file_store_test.go
+
 │   │   ├── memory_store.go
+
 │   │   ├── memory_store_test.go
+
 │   │   ├── session.go
+
 │   │   ├── session_test.go
+
 │   │   ├── store.go
+
 │   │   └── store_test.go
+
 │   │
+
 │   └── tools/
+
 │       ├── calculator.go
+
 │       ├── calculator_test.go
+
 │       ├── filesystem.go
+
 │       ├── filesystem_test.go
+
 │       ├── registry.go
+
 │       ├── registry_test.go
+
 │       ├── shell.go
+
 │       ├── shell_test.go
+
 │       ├── tool.go
+
 │       └── tool_test.go
+
 │
+
 ├── .gitignore
+
 ├── go.mod
+
 ├── go.sum
+
 ├── LICENSE
+
 └── README.md
 ```
 
@@ -2522,20 +3674,35 @@ The current workflow performs:
 
 ```text
 Checkout
+
    │
+
    ▼
+
 Setup Go
+
    │
+
    ▼
+
 Check Formatting
+
    │
+
    ▼
+
 Build MCP Test Server
+
    │
+
    ▼
+
 go test -v ./...
+
    │
+
    ▼
+
 go vet ./...
 ```
 
@@ -2543,6 +3710,7 @@ The workflow runs for pushes to:
 
 ```text
 main
+
 feature/**
 ```
 
@@ -2664,7 +3832,9 @@ Current storage backends include:
 
 ```text
 In-Memory
+
 File
+
 Database
 ```
 
@@ -2763,6 +3933,10 @@ Remote MCP Servers
 | MCP runtime                           | Implemented |
 | MCP session lifecycle                 | Implemented |
 | MCP test server                       | Implemented |
+| MCP CLI listing                       | Implemented |
+| MCP CLI server addition               | Implemented |
+| MCP CLI server removal                | Implemented |
+| MCP CLI configuration persistence     | Implemented |
 | Credential abstraction                | Implemented |
 | Credential storage                    | Implemented |
 | Credential retrieval                  | Implemented |
@@ -2796,7 +3970,6 @@ Remote MCP Servers
 | Go vet checks                         | Implemented |
 | GitHub Actions CI                     | Implemented |
 | Additional providers                  | Planned     |
-| Expanded MCP functionality            | Planned     |
 
 ---
 
@@ -2804,18 +3977,45 @@ Remote MCP Servers
 
 ## Improved MCP Support
 
+The basic MCP integration and CLI server management are implemented.
+
 Future MCP work includes:
 
-* CLI configuration of MCP servers
 * Dynamic MCP server registration
+* Dynamic MCP server removal from the active runtime
 * Improved MCP server lifecycle management
 * Better MCP error handling
 * MCP resource support
 * MCP prompts
 * MCP sampling where applicable
 * Remote MCP transports
+* Additional MCP protocol capabilities
 
 The current runtime primarily focuses on local command-based MCP servers.
+
+### Current MCP CLI Limitation
+
+The current CLI manages persistent MCP configuration.
+
+For example:
+
+```text
+mcp add test-server ./test-server --port 8080
+```
+
+updates the configuration file.
+
+The server is connected when the application starts.
+
+Likewise:
+
+```text
+mcp remove test-server
+```
+
+removes the server from persistent configuration but does not dynamically terminate an already-running MCP session.
+
+Dynamic runtime registration and removal remain future work.
 
 ---
 
@@ -2846,8 +4046,6 @@ Provider Management
 
 Tool Listing
 
-MCP Server Management
-
 Configuration Inspection
 
 Advanced Model Management
@@ -2857,6 +4055,10 @@ Persistent Session Selection
 Interactive Tool Inspection
 ```
 
+MCP Server Management is no longer listed here because basic MCP server management has already been implemented.
+
+Future CLI improvements may build on the existing MCP commands with dynamic runtime operations and richer inspection capabilities.
+
 ---
 
 # End-to-End Example
@@ -2865,41 +4067,77 @@ A simplified native tool execution looks like:
 
 ```text
 User
+
  │
+
  │ "What is 10 + 20?"
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama Provider
+
  │
+
  ▼
+
 Local Model
+
  │
+
  │ Tool Call
+
  ▼
+
 Tool Registry
+
  │
+
  ▼
+
 Calculator
+
  │
+
  │ 10 + 20
+
  ▼
+
 30
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama Provider
+
  │
+
  ▼
+
 Final Response
+
  │
+
  ▼
+
 CLI
 ```
 
@@ -2907,79 +4145,235 @@ A simplified MCP tool execution looks like:
 
 ```text
 User
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama
+
  │
+
  │ Tool Call
+
  ▼
+
 Tool Registry
+
  │
+
  ▼
+
 MCP Adapter
+
  │
+
  ▼
+
 MCP Client Session
+
  │
+
  ▼
+
 MCP Server
+
  │
+
  ▼
+
 Tool Result
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Ollama
+
  │
+
  ▼
+
 Final Response
+```
+
+A simplified MCP configuration workflow looks like:
+
+```text
+User
+
+ │
+
+ │ mcp add test-server ./test-server --port 8080
+
+ ▼
+
+CLI
+
+ │
+
+ ▼
+
+MCP Configuration
+
+ │
+
+ ▼
+
+Save config.json
+
+ │
+
+ ▼
+
+Application Restart
+
+ │
+
+ ▼
+
+MCP Runtime
+
+ │
+
+ ▼
+
+Connect MCP Server
+
+ │
+
+ ▼
+
+Discover Tools
+
+ │
+
+ ▼
+
+Register Tools
+```
+
+A simplified MCP removal workflow looks like:
+
+```text
+User
+
+ │
+
+ │ mcp remove test-server
+
+ ▼
+
+CLI
+
+ │
+
+ ▼
+
+MCP Configuration
+
+ │
+
+ ▼
+
+Save config.json
+
+ │
+
+ ▼
+
+Server no longer loaded on next startup
 ```
 
 A simplified session-aware flow looks like:
 
 ```text
 User
+
  │
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 Active Session
+
  │
+
  ├── ID
+
  ├── CreatedAt
+
  ├── UpdatedAt
+
  ├── Metadata
+
  └── Messages
+
  │
+
  ▼
+
 Agent
+
  │
+
  ▼
+
 Provider
+
  │
+
  ▼
+
 Tool Execution
+
  │
+
  ▼
+
 Updated Session
+
  │
+
  ▼
+
 Session Store
+
  │
+
  ├── FileSessionStore
+
  │      │
+
  │      ▼
+
  │   Atomic File Persistence
+
  │
+
  └── DatabaseSessionStore
+
         │
+
         ▼
+
      SQLite Transaction
 ```
 
@@ -2987,24 +4381,43 @@ A session creation flow looks like:
 
 ```text
 User
+
  │
+
  │ session create project-a
+
  ▼
+
 CLI
+
  │
+
  ▼
+
 NewSession
+
  │
+
  ▼
+
 Session Store
+
  │
+
  ▼
+
 Agent.SetSession
+
  │
+
  ▼
+
 Active Session
+
  │
+
  ▼
+
 Agent Runtime
 ```
 
