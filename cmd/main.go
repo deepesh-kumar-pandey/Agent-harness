@@ -209,6 +209,8 @@ func handleCommand(
 	sessionStore sessionpkg.Store,
 	agentClient *agentpkg.Agent,
 	appConfig *configpkg.Config,
+	mcpRuntime *mcppkg.Runtime,
+	registry *toolspkg.ToolRegistry,
 	output io.Writer,
 ) CommandResult {
 	parts := strings.Fields(input)
@@ -421,6 +423,22 @@ func handleCommand(
 					)
 					return CommandHandled
 				}
+			}
+
+			if err := mcpRuntime.ConnectServer(
+				context.Background(),
+				name,
+				command,
+				args,
+				registry,
+			); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to connect to MCP server %q: %v\n",
+					name,
+					err,
+				)
+				return CommandHandled
 			}
 
 			server := configpkg.MCPServer{
@@ -683,6 +701,8 @@ func main() {
 			sessionStore,
 			agentClient,
 			appConfig,
+			mcpRuntime,
+			registry,
 			os.Stdout,
 		)
 
