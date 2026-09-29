@@ -47,6 +47,21 @@ func (r *Runtime) ConnectServer(
 	return nil
 }
 
+func (r *Runtime) DisconnectServer(name string) error {
+	session, exists := r.sessions[name]
+	if !exists {
+		return fmt.Errorf("MCP server %q is not connected", name)
+	}
+
+	if err := session.Close(); err != nil {
+		return fmt.Errorf("failed to disconnect MCP server %q: %w", name, err)
+	}
+
+	delete(r.sessions, name)
+
+	return nil
+}
+
 func (r *Runtime) Close() error {
 	var firstErr error
 
