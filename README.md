@@ -41,6 +41,8 @@ The project currently supports:
 * MCP server listing through the CLI
 * MCP server addition through the CLI
 * MCP server removal through the CLI
+* Dynamic MCP server registration
+* Dynamic MCP server removal
 * Persistent MCP server configuration
 * Credential storage and retrieval
 * In-memory session storage
@@ -72,6 +74,7 @@ The core runtime is functional.
 Current development is focused on:
 
 * Improving MCP capabilities
+* Improving MCP lifecycle and error handling
 * Improving CLI functionality
 * Adding additional providers
 * Increasing runtime extensibility
@@ -153,11 +156,17 @@ Conceptually:
 
 ```text
 Provider
+
    │
+
    ▼
+
 Chat(request)
+
    │
+
    ▼
+
 Model Response
 ```
 
@@ -165,6 +174,7 @@ Local model providers can additionally implement:
 
 ```text
 ListModels
+
 PullModel
 ```
 
@@ -274,6 +284,10 @@ The same abstraction is used for:
 
 #### `Name`
 
+```text
+tool.Name()
+```
+
 Returns the unique name used to identify the tool.
 
 Example:
@@ -284,6 +298,10 @@ tool.Name()
 
 #### `Description`
 
+```text
+tool.Description()
+```
+
 Returns a human-readable description of what the tool does.
 
 Example:
@@ -293,6 +311,10 @@ tool.Description()
 ```
 
 #### `Execute`
+
+```text
+tool.Execute(ctx, arguments)
+```
 
 Executes the tool using the provided arguments and returns the tool result.
 
@@ -305,6 +327,10 @@ tool.Execute(ctx, arguments)
 The exact arguments depend on the Tool implementation.
 
 #### `Schema`
+
+```text
+tool.Schema()
+```
 
 Returns the parameter schema used by the model to understand the tool's expected arguments.
 
@@ -434,9 +460,13 @@ The Calculator tool supports:
 
 ```text
 add
+
 subtract
+
 multiply
+
 divide
+
 modulus
 ```
 
@@ -638,7 +668,7 @@ Creates a new MCP client using the configured client implementation.
 
 Example:
 
-```text
+```go
 client := mcp.NewClient()
 ```
 
@@ -652,7 +682,7 @@ Establishes an MCP connection using the configured transport.
 
 Example:
 
-```text
+```go
 session, err := client.Connect(ctx, transport)
 ```
 
@@ -668,7 +698,7 @@ Starts a local MCP server process and establishes an MCP connection using comman
 
 Example:
 
-```text
+```go
 session, err := client.ConnectCommand(
     ctx,
     "./mcp-server",
@@ -686,7 +716,7 @@ Retrieves the tools exposed by the connected MCP server.
 
 Example:
 
-```text
+```go
 tools, err := client.ListTools(ctx, session)
 ```
 
@@ -910,17 +940,29 @@ Conceptually:
 
 ```text
 MCP Session
+
      │
+
      ▼
+
 ListTools
+
      │
+
      ▼
+
 Create MCP Tools
+
      │
+
      ▼
+
 Create Adapters
+
      │
+
      ▼
+
 Registry.Register
 ```
 
@@ -939,6 +981,8 @@ The runtime is responsible for managing MCP server connections during the lifeti
 The runtime:
 
 * Connects to configured MCP servers
+* Dynamically connects MCP servers
+* Dynamically disconnects MCP servers
 * Starts command-based MCP server processes
 * Creates MCP client sessions
 * Discovers MCP tools
@@ -952,33 +996,51 @@ The runtime keeps the client sessions alive because MCP Tool Adapters use those 
 
 ### Runtime Creation
 
-Creates the runtime with the required Tool Registry and MCP configuration.
+Creates a new MCP runtime with an empty set of active server sessions.
 
-Conceptually:
-
-```text
-NewRuntime(config, registry)
+```go
+runtime := mcp.NewRuntime()
 ```
 
-### Server Connection
+The Tool Registry is supplied when connecting a server because discovered MCP tools are registered during the connection process.
 
-Connects to configured MCP servers and creates the required MCP client sessions.
-
-Conceptually:
+### `ConnectServer`
 
 ```text
-runtime.Connect(...)
+ConnectServer(ctx, name, command, args, registry)
 ```
 
-### Tool Registration
+Connects to an MCP server, creates its client session, discovers its tools, and registers those tools into the provided Tool Registry.
 
-Discovers MCP tools and registers them into the native Tool Registry.
+Example:
 
-Conceptually:
+```go
+err := runtime.ConnectServer(
+    ctx,
+    "test-server",
+    "./test-server",
+    []string{},
+    registry,
+)
+```
+
+The server becomes part of the active runtime immediately after a successful connection and tool registration.
+
+### `DisconnectServer`
 
 ```text
-runtime.RegisterTools(...)
+DisconnectServer(name)
 ```
+
+Disconnects an active MCP server session.
+
+Example:
+
+```go
+err := runtime.DisconnectServer("test-server")
+```
+
+The active MCP client session is closed and removed from the runtime.
 
 ### `Close`
 
@@ -990,7 +1052,7 @@ Closes active MCP sessions and releases MCP runtime resources during application
 
 Example:
 
-```text
+```go
 defer runtime.Close()
 ```
 
@@ -998,7 +1060,11 @@ defer runtime.Close()
 
 # MCP Runtime Lifecycle
 
-The lifecycle is:
+The runtime supports both startup connections and dynamic server lifecycle operations.
+
+## Application Startup
+
+Configured MCP servers are connected during application startup:
 
 ```text
 Application Start
@@ -1017,11 +1083,9 @@ MCP Runtime
 
        │
 
-       ├── Start MCP Server
+       ├── Connect Configured Server
 
-       ├── Connect MCP Client
-
-       ├── Create Session
+       ├── Create Client Session
 
        ├── Discover Tools
 
@@ -1031,6 +1095,102 @@ MCP Runtime
 
        ▼
 
+Application Running
+```
+
+## Dynamic Server Addition
+
+A server can also be connected while the application is running:
+
+```text
+mcp add
+
+       │
+
+       ▼
+
+Connect MCP Server
+
+       │
+
+       ▼
+
+Create Client Session
+
+       │
+
+       ▼
+
+Discover Tools
+
+       │
+
+       ▼
+
+Register Tools
+
+       │
+
+       ▼
+
+Update Configuration
+
+       │
+
+       ▼
+
+Save Configuration
+
+       │
+
+       ▼
+
+Server Available Immediately
+```
+
+## Dynamic Server Removal
+
+A running server can be disconnected through the CLI:
+
+```text
+mcp remove
+
+       │
+
+       ▼
+
+Find Configured Server
+
+       │
+
+       ▼
+
+Disconnect Active Session
+
+       │
+
+       ▼
+
+Remove Server From Configuration
+
+       │
+
+       ▼
+
+Save Configuration
+
+       │
+
+       ▼
+
+Server No Longer Active
+```
+
+## Tool Execution
+
+While the application is running:
+
+```text
 Application Running
 
        │
@@ -1056,18 +1216,30 @@ MCP Server
        ▼
 
 Tool Result
+```
 
-       │
+## Application Shutdown
 
-       ▼
-
+```text
 Application Shutdown
 
        │
 
        ▼
 
-Close MCP Sessions
+MCP Runtime
+
+       │
+
+       ▼
+
+Close Active Sessions
+
+       │
+
+       ▼
+
+MCP Server Processes Exit
 ```
 
 ---
@@ -1086,6 +1258,7 @@ The configuration supports:
     "base_url": "http://localhost:11434",
     "endpoint": "/api/chat"
   },
+
   "mcp": {
     "servers": [
       {
@@ -1130,15 +1303,24 @@ The CLI currently supports:
 
 ```text
 mcp list
+
 mcp add <name> <command> [args...]
+
 mcp remove <name>
 ```
 
-These commands modify the MCP server configuration stored in the application's configuration file.
+The MCP CLI manages both:
 
-The MCP CLI currently manages **persistent configuration**. Adding or removing a server does not dynamically attach or detach the server from an already-running MCP runtime.
+* Persistent MCP server configuration
+* Active MCP runtime connections
 
 Configured servers are loaded and connected when the application starts.
+
+Servers added through `mcp add` are connected immediately.
+
+Servers removed through `mcp remove` are disconnected immediately.
+
+---
 
 ## `mcp`
 
@@ -1168,7 +1350,9 @@ Example:
 
 ```text
 MCP servers:
+
 - test-server: ./test-server --port 8080
+
 - filesystem: npx -y @modelcontextprotocol/server-filesystem /tmp
 ```
 
@@ -1184,7 +1368,7 @@ The command reads the currently loaded MCP configuration and displays each confi
 
 ## `mcp add`
 
-Adds a new MCP server to the configuration.
+Adds and connects a new MCP server.
 
 Syntax:
 
@@ -1214,10 +1398,12 @@ The command performs the following operations:
 
 1. Reads the current MCP configuration.
 2. Checks whether the server name already exists.
-3. Creates a new `MCPServer` configuration entry.
-4. Stores the command.
-5. Stores all remaining arguments in `Args`.
-6. Saves the updated configuration.
+3. Connects to the MCP server.
+4. Creates an MCP client session.
+5. Discovers the server's tools.
+6. Registers the discovered tools into the Tool Registry.
+7. Adds the server to the persistent configuration.
+8. Saves the updated configuration.
 
 Example output:
 
@@ -1233,17 +1419,17 @@ MCP server "test-server" already exists.
 
 ### Important
 
-`mcp add` currently updates the persistent configuration only.
+`mcp add` dynamically connects the server to the active MCP runtime.
 
-It does **not** dynamically connect the new server to the MCP runtime of the currently running application.
+A successful `mcp add` therefore makes the server available immediately without requiring an application restart.
 
-The server becomes part of the startup configuration and will be connected when Agent Harness is started again.
+The server is also persisted in the configuration so it will be connected again during the next application startup.
 
 ---
 
 ## `mcp remove`
 
-Removes an MCP server from the configuration.
+Removes and disconnects an MCP server.
 
 Syntax:
 
@@ -1257,18 +1443,19 @@ Example:
 mcp remove test-server
 ```
 
+The command performs the following operations:
+
+1. Searches the configured MCP servers by name.
+2. Finds the matching server.
+3. Disconnects the active MCP runtime session.
+4. Removes the server from the configuration.
+5. Saves the updated configuration.
+
 Example output:
 
 ```text
 Removed MCP server: test-server
 ```
-
-The command:
-
-1. Searches the configured MCP servers by name.
-2. Finds the matching server.
-3. Removes it from the configuration.
-4. Saves the updated configuration.
 
 If the server does not exist:
 
@@ -1284,11 +1471,9 @@ Usage: mcp remove <name>
 
 ### Important
 
-`mcp remove` currently updates persistent configuration only.
+`mcp remove` disconnects the active MCP session before removing the server from persistent configuration.
 
-It does **not** dynamically close an already-active MCP session.
-
-Active MCP runtime sessions are closed during application shutdown.
+The server therefore stops being active immediately without requiring an application restart.
 
 ---
 
@@ -1302,6 +1487,8 @@ A typical MCP configuration workflow is:
 mcp add test-server ./test-server --port 8080
 ```
 
+The server is connected immediately and its tools are registered.
+
 ### 2. Verify the configuration
 
 ```text
@@ -1312,12 +1499,15 @@ Example:
 
 ```text
 MCP servers:
+
 - test-server: ./test-server --port 8080
 ```
 
-### 3. Restart Agent Harness
+### 3. Use the server immediately
 
-The configured MCP server is connected during application startup.
+No application restart is required.
+
+The server's discovered MCP tools are available through the Tool Registry.
 
 ### 4. Remove the server when no longer required
 
@@ -1325,13 +1515,15 @@ The configured MCP server is connected during application startup.
 mcp remove test-server
 ```
 
+The active MCP session is disconnected immediately.
+
 ### 5. Verify removal
 
 ```text
 mcp list
 ```
 
-If it was the only server:
+If it was the only configured server:
 
 ```text
 No MCP servers configured.
@@ -1413,6 +1605,7 @@ The tests cover:
 * Runtime creation
 * MCP runtime server connection
 * MCP session cleanup
+* MCP runtime server disconnection
 
 Run the MCP tests with:
 
@@ -1456,6 +1649,8 @@ Discover MCP Tools
 Register Tools
 
 Keep Sessions
+
+Disconnect Sessions
 
 Close Sessions
 ```
@@ -1862,9 +2057,13 @@ Example:
 
 ```text
 store := MemoryStore
+
 store.Set(session)
+
 store.Get(session.ID)
+
 store.List()
+
 store.Delete(session.ID)
 ```
 
@@ -2449,8 +2648,8 @@ default
 | `clear`                              | Clear the current conversation history |
 | `mcp`                                | Show MCP command usage                 |
 | `mcp list`                           | List configured MCP servers            |
-| `mcp add <name> <command> [args...]` | Add and persist an MCP server          |
-| `mcp remove <name>`                  | Remove and persist an MCP server       |
+| `mcp add <name> <command> [args...]` | Connect and persist an MCP server      |
+| `mcp remove <name>`                  | Disconnect and remove an MCP server    |
 | `exit`                               | Exit the CLI                           |
 
 ---
@@ -2467,17 +2666,29 @@ Example:
 
 ```text
 Available commands:
+
 help
+
 model
+
 session
+
 session create <id>
+
 session list
+
 session load <id>
+
 session delete <id>
+
 clear
+
 mcp list
+
 mcp add <name> <command> [args...]
+
 mcp remove <name>
+
 exit
 ```
 
@@ -2501,6 +2712,7 @@ Example:
 
 ```text
 Model: llama3.1
+
 Source: config
 ```
 
@@ -2562,7 +2774,9 @@ Example:
 Sessions:
 
 - default
+
 - project-a
+
 - project-b
 ```
 
@@ -2636,6 +2850,7 @@ Current structure:
     "base_url": "http://localhost:11434",
     "endpoint": "/api/chat"
   },
+
   "mcp": {
     "servers": []
   }
@@ -2882,14 +3097,23 @@ Example flow:
 
 ```text
 OpenAI Response
+
       │
+
       ▼
+
 Tool Call
+
       │
+
       ▼
+
 Common ToolCall
+
       │
+
       ▼
+
 Agent Runtime
 ```
 
@@ -2933,6 +3157,7 @@ Currently supported providers are:
 
 ```text
 ollama
+
 openai
 ```
 
@@ -3932,6 +4157,8 @@ Remote MCP Servers
 | MCP tool registration                 | Implemented |
 | MCP runtime                           | Implemented |
 | MCP session lifecycle                 | Implemented |
+| MCP dynamic server registration       | Implemented |
+| MCP dynamic server removal            | Implemented |
 | MCP test server                       | Implemented |
 | MCP CLI listing                       | Implemented |
 | MCP CLI server addition               | Implemented |
@@ -3977,12 +4204,10 @@ Remote MCP Servers
 
 ## Improved MCP Support
 
-The basic MCP integration and CLI server management are implemented.
+The basic MCP integration, CLI server management, and dynamic MCP server lifecycle are implemented.
 
 Future MCP work includes:
 
-* Dynamic MCP server registration
-* Dynamic MCP server removal from the active runtime
 * Improved MCP server lifecycle management
 * Better MCP error handling
 * MCP resource support
@@ -3990,32 +4215,10 @@ Future MCP work includes:
 * MCP sampling where applicable
 * Remote MCP transports
 * Additional MCP protocol capabilities
+* Improved MCP tool lifecycle management
+* Better handling of tools when an MCP server is disconnected
 
 The current runtime primarily focuses on local command-based MCP servers.
-
-### Current MCP CLI Limitation
-
-The current CLI manages persistent MCP configuration.
-
-For example:
-
-```text
-mcp add test-server ./test-server --port 8080
-```
-
-updates the configuration file.
-
-The server is connected when the application starts.
-
-Likewise:
-
-```text
-mcp remove test-server
-```
-
-removes the server from persistent configuration but does not dynamically terminate an already-running MCP session.
-
-Dynamic runtime registration and removal remain future work.
 
 ---
 
@@ -4055,9 +4258,9 @@ Persistent Session Selection
 Interactive Tool Inspection
 ```
 
-MCP Server Management is no longer listed here because basic MCP server management has already been implemented.
+MCP Server Management is no longer listed here because basic MCP server management and dynamic runtime operations have already been implemented.
 
-Future CLI improvements may build on the existing MCP commands with dynamic runtime operations and richer inspection capabilities.
+Future CLI improvements may build on the existing MCP commands with richer inspection capabilities.
 
 ---
 
@@ -4209,7 +4412,7 @@ Ollama
 Final Response
 ```
 
-A simplified MCP configuration workflow looks like:
+A simplified MCP server addition workflow looks like:
 
 ```text
 User
@@ -4226,7 +4429,23 @@ CLI
 
  ▼
 
-MCP Configuration
+MCP Runtime
+
+ │
+
+ ├── Connect MCP Server
+
+ ├── Create Client Session
+
+ ├── Discover Tools
+
+ └── Register Tools
+
+ │
+
+ ▼
+
+Update Configuration
 
  │
 
@@ -4238,34 +4457,10 @@ Save config.json
 
  ▼
 
-Application Restart
-
- │
-
- ▼
-
-MCP Runtime
-
- │
-
- ▼
-
-Connect MCP Server
-
- │
-
- ▼
-
-Discover Tools
-
- │
-
- ▼
-
-Register Tools
+Server Available Immediately
 ```
 
-A simplified MCP removal workflow looks like:
+A simplified MCP server removal workflow looks like:
 
 ```text
 User
@@ -4282,7 +4477,19 @@ CLI
 
  ▼
 
-MCP Configuration
+MCP Runtime
+
+ │
+
+ ▼
+
+Disconnect Active Session
+
+ │
+
+ ▼
+
+Remove From Configuration
 
  │
 
@@ -4294,7 +4501,7 @@ Save config.json
 
  ▼
 
-Server no longer loaded on next startup
+Server No Longer Active
 ```
 
 A simplified session-aware flow looks like:
