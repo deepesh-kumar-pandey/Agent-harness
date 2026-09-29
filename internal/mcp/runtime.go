@@ -10,12 +10,12 @@ import (
 )
 
 type Runtime struct {
-	sessions []*mcpsdk.ClientSession
+	sessions map[string]*mcpsdk.ClientSession
 }
 
 func NewRuntime() *Runtime {
 	return &Runtime{
-		sessions: make([]*mcpsdk.ClientSession, 0),
+		sessions: make(map[string]*mcpsdk.ClientSession),
 	}
 }
 
@@ -26,6 +26,10 @@ func (r *Runtime) ConnectServer(
 	args []string,
 	registry *toolspkg.ToolRegistry,
 ) error {
+	if _, exists := r.sessions[name]; exists {
+		return fmt.Errorf("MCP server %q is already connected", name)
+	}
+
 	client := NewClient()
 
 	session, err := client.ConnectCommand(ctx, command, args)
@@ -38,7 +42,7 @@ func (r *Runtime) ConnectServer(
 		return fmt.Errorf("failed to register tools from MCP server %q: %w", name, err)
 	}
 
-	r.sessions = append(r.sessions, session)
+	r.sessions[name] = session
 
 	return nil
 }
@@ -52,7 +56,7 @@ func (r *Runtime) Close() error {
 		}
 	}
 
-	r.sessions = nil
+	r.sessions = make(map[string]*mcpsdk.ClientSession)
 
 	return firstErr
 }
