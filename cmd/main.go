@@ -507,6 +507,16 @@ func handleCommand(
 				return CommandHandled
 			}
 
+			if err := mcpRuntime.DisconnectServer(name); err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to disconnect MCP server %q: %v\n",
+					name,
+					err,
+				)
+				return CommandHandled
+			}
+
 			appConfig.MCP.Servers = append(
 				appConfig.MCP.Servers[:serverIndex],
 				appConfig.MCP.Servers[serverIndex+1:]...,
