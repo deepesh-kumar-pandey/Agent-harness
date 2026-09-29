@@ -24,18 +24,18 @@ func TestNewRuntime(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Log("creating MCP runtime")
 
-			runtime := NewRuntime()
+			mcpRuntime := NewRuntime()
 
-			if runtime == nil {
+			if mcpRuntime == nil {
 				t.Fatal("expected runtime, got nil")
 			}
 
-			if runtime.sessions == nil {
-				t.Fatal("expected sessions slice, got nil")
+			if mcpRuntime.sessions == nil {
+				t.Fatal("expected sessions map, got nil")
 			}
 
-			if len(runtime.sessions) != 0 {
-				t.Fatalf("expected 0 sessions, got %d", len(runtime.sessions))
+			if len(mcpRuntime.sessions) != 0 {
+				t.Fatalf("expected 0 sessions, got %d", len(mcpRuntime.sessions))
 			}
 
 			t.Log("MCP runtime created successfully")
@@ -74,6 +74,10 @@ func TestRuntimeConnectServer(t *testing.T) {
 
 	if len(mcpRuntime.sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(mcpRuntime.sessions))
+	}
+
+	if _, exists := mcpRuntime.sessions["test-server"]; !exists {
+		t.Fatal("expected test-server session to be stored")
 	}
 
 	if !registry.Has("test_tool") {
@@ -133,6 +137,14 @@ func TestRuntimeConnectMultipleServers(t *testing.T) {
 		t.Fatalf("expected 2 sessions, got %d", len(mcpRuntime.sessions))
 	}
 
+	if _, exists := mcpRuntime.sessions["test-server-1"]; !exists {
+		t.Fatal("expected test-server-1 session to be stored")
+	}
+
+	if _, exists := mcpRuntime.sessions["test-server-2"]; !exists {
+		t.Fatal("expected test-server-2 session to be stored")
+	}
+
 	if !registry.Has("test_tool") {
 		t.Fatal("expected test_tool to be registered")
 	}
@@ -169,6 +181,59 @@ func TestRuntimeConnectServerInvalidCommand(t *testing.T) {
 	}
 }
 
+// Tests rejecting duplicate MCP server connections.
+func TestRuntimeConnectServerDuplicate(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to determine current test file")
+	}
+
+	projectRoot := filepath.Join(filepath.Dir(currentFile), "..", "..")
+	command := filepath.Join(projectRoot, "cmd", "mcp-test-server", "mcp-test-server")
+
+	if _, err := os.Stat(command); err != nil {
+		t.Fatalf("test MCP server executable not found: %v", err)
+	}
+
+	ctx := context.Background()
+	registry := toolspkg.NewToolRegistry()
+	mcpRuntime := NewRuntime()
+
+	err := mcpRuntime.ConnectServer(
+		ctx,
+		"test-server",
+		command,
+		[]string{},
+		registry,
+	)
+	if err != nil {
+		t.Fatalf("expected first server connection to succeed, got error: %v", err)
+	}
+
+	err = mcpRuntime.ConnectServer(
+		ctx,
+		"test-server",
+		command,
+		[]string{},
+		registry,
+	)
+	if err == nil {
+		t.Fatal("expected duplicate connection error, got nil")
+	}
+
+	if len(mcpRuntime.sessions) != 1 {
+		t.Fatalf("expected 1 session after duplicate connection attempt, got %d", len(mcpRuntime.sessions))
+	}
+
+	if _, exists := mcpRuntime.sessions["test-server"]; !exists {
+		t.Fatal("expected original test-server session to remain")
+	}
+
+	if err := mcpRuntime.Close(); err != nil {
+		t.Fatalf("failed to close runtime: %v", err)
+	}
+}
+
 // Tests closing an MCP runtime.
 func TestRuntimeClose(t *testing.T) {
 	mcpRuntime := NewRuntime()
@@ -177,7 +242,11 @@ func TestRuntimeClose(t *testing.T) {
 		t.Fatalf("expected close to succeed, got error: %v", err)
 	}
 
-	if mcpRuntime.sessions != nil {
-		t.Fatal("expected sessions to be nil after close")
+	if mcpRuntime.sessions == nil {
+		t.Fatal("expected sessions map after close")
+	}
+
+	if len(mcpRuntime.sessions) != 0 {
+		t.Fatalf("expected 0 sessions after close, got %d", len(mcpRuntime.sessions))
 	}
 }
