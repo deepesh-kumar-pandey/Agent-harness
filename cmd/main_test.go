@@ -3,9 +3,12 @@ package main
 import (
 	"bufio"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	configpkg "agent-harness/config"
 	agentpkg "agent-harness/internal/agent"
 	providerpkg "agent-harness/internal/provider"
 	sessionpkg "agent-harness/internal/session"
@@ -280,6 +283,7 @@ func TestHandleCommand(t *testing.T) {
 		modelSource    string
 		expectedResult CommandResult
 		expectedOutput string
+		mcpServers     []configpkg.MCPServer
 	}{
 		{
 			name:           "Help command",
@@ -287,7 +291,7 @@ func TestHandleCommand(t *testing.T) {
 			model:          "test-model",
 			modelSource:    "test-source",
 			expectedResult: CommandHandled,
-			expectedOutput: "Available commands: help, exit, model, session, clear",
+			expectedOutput: "Available commands: help, exit, model, session, clear, mcp",
 		},
 		{
 			name:           "Model command",
@@ -386,6 +390,121 @@ func TestHandleCommand(t *testing.T) {
 			expectedOutput: "Failed to delete session: session not found: missing-session",
 		},
 		{
+			name:           "MCP list command",
+			input:          "mcp list",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "MCP servers:\n- test-server: ./cmd/mcp-test-server/mcp-test-server --port 8080\n- filesystem: npx -y @modelcontextprotocol/server-filesystem /tmp",
+			mcpServers: []configpkg.MCPServer{
+				{
+					Name:    "test-server",
+					Command: "./cmd/mcp-test-server/mcp-test-server",
+					Args:    []string{"--port", "8080"},
+				},
+				{
+					Name:    "filesystem",
+					Command: "npx",
+					Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
+				},
+			},
+		},
+		{
+			name:           "MCP list with no servers",
+			input:          "mcp list",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "No MCP servers configured.",
+		},
+		{
+			name:           "MCP command missing subcommand",
+			input:          "mcp",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: mcp list | mcp add <name> <command> [args...] | mcp remove <name>",
+		},
+		{
+			name:           "MCP unknown subcommand",
+			input:          "mcp test",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Unknown mcp command.",
+		},
+		{
+			name:           "MCP add command",
+			input:          "mcp add test-server ./test-server --port 8080",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Added MCP server: test-server",
+		},
+		{
+			name:           "MCP add command missing arguments",
+			input:          "mcp add test-server",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: mcp add <name> <command> [args...]",
+		},
+		{
+			name:           "MCP add duplicate server",
+			input:          "mcp add test-server ./test-server",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "MCP server \"test-server\" already exists.",
+			mcpServers: []configpkg.MCPServer{
+				{
+					Name:    "test-server",
+					Command: "./test-server",
+				},
+			},
+		},
+		{
+			name:           "MCP remove command",
+			input:          "mcp remove test-server",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Removed MCP server: test-server",
+			mcpServers: []configpkg.MCPServer{
+				{
+					Name:    "test-server",
+					Command: "./test-server",
+				},
+				{
+					Name:    "filesystem",
+					Command: "npx",
+					Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
+				},
+			},
+		},
+		{
+			name:           "MCP remove command missing name",
+			input:          "mcp remove",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "Usage: mcp remove <name>",
+		},
+		{
+			name:           "MCP remove server not found",
+			input:          "mcp remove missing-server",
+			model:          "test-model",
+			modelSource:    "test-source",
+			expectedResult: CommandHandled,
+			expectedOutput: "MCP server \"missing-server\" not found.",
+			mcpServers: []configpkg.MCPServer{
+				{
+					Name:    "test-server",
+					Command: "./test-server",
+				},
+			},
+		},
+		{
 			name:           "Clear command",
 			input:          "clear",
 			model:          "test-model",
@@ -460,6 +579,117 @@ func TestHandleCommand(t *testing.T) {
 				)
 			}
 
+			appConfig := &configpkg.Config{
+				Provider: configpkg.Provider{
+					Name:     "ollama",
+					Model:    "llama3.1",
+					BaseURL:  "http://localhost:11434",
+					Endpoint: "/api/chat",
+				},
+				MCP: configpkg.MCPConfig{
+					Servers: testCase.mcpServers,
+				},
+			}
+
+			if testCase.input == "mcp add test-server ./test-server --port 8080" {
+				originalDir, err := os.Getwd()
+				if err != nil {
+					t.Fatalf("failed to get working directory: %v", err)
+				}
+
+				tempDir := t.TempDir()
+
+				if err := os.Chdir(tempDir); err != nil {
+					t.Fatalf("failed to change working directory: %v", err)
+				}
+
+				t.Cleanup(func() {
+					if err := os.Chdir(originalDir); err != nil {
+						t.Fatalf(
+							"failed to restore working directory: %v",
+							err,
+						)
+					}
+				})
+
+				if err := os.MkdirAll(filepath.Join("config"), 0755); err != nil {
+					t.Fatalf(
+						"failed to create config directory: %v",
+						err,
+					)
+				}
+
+				initialConfig := &configpkg.Config{
+					Provider: configpkg.Provider{
+						Name:     "ollama",
+						Model:    "llama3.1",
+						BaseURL:  "http://localhost:11434",
+						Endpoint: "/api/chat",
+					},
+				}
+
+				if err := configpkg.Save(
+					filepath.Join("config", "config.json"),
+					initialConfig,
+				); err != nil {
+					t.Fatalf(
+						"failed to create initial config: %v",
+						err,
+					)
+				}
+			}
+
+			if testCase.input == "mcp remove test-server" {
+				originalDir, err := os.Getwd()
+				if err != nil {
+					t.Fatalf("failed to get working directory: %v", err)
+				}
+
+				tempDir := t.TempDir()
+
+				if err := os.Chdir(tempDir); err != nil {
+					t.Fatalf("failed to change working directory: %v", err)
+				}
+
+				t.Cleanup(func() {
+					if err := os.Chdir(originalDir); err != nil {
+						t.Fatalf(
+							"failed to restore working directory: %v",
+							err,
+						)
+					}
+				})
+
+				if err := os.MkdirAll("config", 0755); err != nil {
+					t.Fatalf(
+						"failed to create config directory: %v",
+						err,
+					)
+				}
+
+				initialConfig := &configpkg.Config{
+					Provider: configpkg.Provider{
+						Name:     "ollama",
+						Model:    "llama3.1",
+						BaseURL:  "http://localhost:11434",
+						Endpoint: "/api/chat",
+					},
+					MCP: configpkg.MCPConfig{
+						Servers: testCase.mcpServers,
+					},
+				}
+
+				if err := configpkg.Save(
+					filepath.Join("config", "config.json"),
+					initialConfig,
+				); err != nil {
+					t.Fatalf(
+						"failed to create initial config: %v",
+						err,
+					)
+				}
+			}
+
 			got := handleCommand(
 				testCase.input,
 				testCase.model,
@@ -467,8 +697,82 @@ func TestHandleCommand(t *testing.T) {
 				&currentSession,
 				sessionStore,
 				agentClient,
+				appConfig,
 				&output,
 			)
+
+			if testCase.input == "mcp add test-server ./test-server --port 8080" {
+				savedConfig, err := configpkg.Load(
+					filepath.Join("config", "config.json"),
+				)
+				if err != nil {
+					t.Fatalf(
+						"failed to load saved config: %v",
+						err,
+					)
+				}
+
+				if len(savedConfig.MCP.Servers) != 1 {
+					t.Fatalf(
+						"expected 1 MCP server, got %d",
+						len(savedConfig.MCP.Servers),
+					)
+				}
+
+				server := savedConfig.MCP.Servers[0]
+
+				if server.Name != "test-server" {
+					t.Fatalf(
+						"expected server name %q, got %q",
+						"test-server",
+						server.Name,
+					)
+				}
+
+				if server.Command != "./test-server" {
+					t.Fatalf(
+						"expected command %q, got %q",
+						"./test-server",
+						server.Command,
+					)
+				}
+
+				if len(server.Args) != 2 ||
+					server.Args[0] != "--port" ||
+					server.Args[1] != "8080" {
+					t.Fatalf(
+						"expected args [--port 8080], got %v",
+						server.Args,
+					)
+				}
+			}
+
+			if testCase.input == "mcp remove test-server" {
+				savedConfig, err := configpkg.Load(
+					filepath.Join("config", "config.json"),
+				)
+				if err != nil {
+					t.Fatalf(
+						"failed to load saved config: %v",
+						err,
+					)
+				}
+
+				if len(savedConfig.MCP.Servers) != 1 {
+					t.Fatalf(
+						"expected 1 MCP server, got %d",
+						len(savedConfig.MCP.Servers),
+					)
+				}
+
+				if savedConfig.MCP.Servers[0].Name != "filesystem" {
+					t.Fatalf(
+						"expected remaining server %q, got %q",
+						"filesystem",
+						savedConfig.MCP.Servers[0].Name,
+					)
+				}
+			}
 
 			if got != testCase.expectedResult {
 				t.Fatalf(
