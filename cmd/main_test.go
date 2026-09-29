@@ -5,13 +5,16 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	configpkg "agent-harness/config"
 	agentpkg "agent-harness/internal/agent"
+	mcppkg "agent-harness/internal/mcp"
 	providerpkg "agent-harness/internal/provider"
 	sessionpkg "agent-harness/internal/session"
+	toolspkg "agent-harness/internal/tools"
 )
 
 type fakeLocalProvider struct {
@@ -137,8 +140,10 @@ func TestSelectModel(t *testing.T) {
 			expectOutput:   "Available local models:",
 		},
 		{
-			name:           "Invalid choice then selects alternative",
-			provider:       &fakeLocalProvider{models: []string{"mistral:latest"}},
+			name: "Invalid choice then selects alternative",
+			provider: &fakeLocalProvider{
+				models: []string{"mistral:latest"},
+			},
 			configured:     "llama3.1",
 			input:          "x\n1\n",
 			expected:       "mistral:latest",
@@ -181,8 +186,10 @@ func TestSelectModel(t *testing.T) {
 			expectPulls:  1,
 		},
 		{
-			name:         "Reports Ollama unavailable",
-			provider:     &fakeLocalProvider{listErr: errors.New("connection refused")},
+			name: "Reports Ollama unavailable",
+			provider: &fakeLocalProvider{
+				listErr: errors.New("connection refused"),
+			},
 			configured:   "llama3.1",
 			expectError:  true,
 			expectOutput: "Unable to connect to Ollama.",
@@ -405,7 +412,11 @@ func TestHandleCommand(t *testing.T) {
 				{
 					Name:    "filesystem",
 					Command: "npx",
-					Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
+					Args: []string{
+						"-y",
+						"@modelcontextprotocol/server-filesystem",
+						"/tmp",
+					},
 				},
 			},
 		},
@@ -435,7 +446,7 @@ func TestHandleCommand(t *testing.T) {
 		},
 		{
 			name:           "MCP add command",
-			input:          "mcp add test-server ./test-server --port 8080",
+			input:          "mcp add test-server ./cmd/mcp-test-server/mcp-test-server",
 			model:          "test-model",
 			modelSource:    "test-source",
 			expectedResult: CommandHandled,
@@ -478,7 +489,11 @@ func TestHandleCommand(t *testing.T) {
 				{
 					Name:    "filesystem",
 					Command: "npx",
-					Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
+					Args: []string{
+						"-y",
+						"@modelcontextprotocol/server-filesystem",
+						"/tmp",
+					},
 				},
 			},
 		},
@@ -533,7 +548,17 @@ func TestHandleCommand(t *testing.T) {
 			var output strings.Builder
 
 			sessionStore := sessionpkg.NewSessionStore()
-			agentClient := agentpkg.NewAgent(nil)
+
+			registry := toolspkg.NewToolRegistry()
+			mcpRuntime := mcppkg.NewRuntime()
+
+			agentClient := agentpkg.NewAgent(registry)
+
+			t.Cleanup(func() {
+				if err := mcpRuntime.Close(); err != nil {
+					t.Fatalf("failed to close MCP runtime: %v", err)
+				}
+			})
 
 			currentSession := sessionpkg.NewSession("test-session")
 
@@ -591,7 +616,12 @@ func TestHandleCommand(t *testing.T) {
 				},
 			}
 
-			if testCase.input == "mcp add test-server ./test-server --port 8080" {
+			isMCPAddTest := testCase.input ==
+				"mcp add test-server ./cmd/mcp-test-server/mcp-test-server"
+
+			testServerCommand := ""
+
+			if isMCPAddTest {
 				originalDir, err := os.Getwd()
 				if err != nil {
 					t.Fatalf("failed to get working directory: %v", err)
@@ -612,12 +642,38 @@ func TestHandleCommand(t *testing.T) {
 					}
 				})
 
-				if err := os.MkdirAll(filepath.Join("config"), 0755); err != nil {
+				if err := os.MkdirAll("config", 0755); err != nil {
 					t.Fatalf(
 						"failed to create config directory: %v",
 						err,
 					)
 				}
+
+				_, currentFile, _, ok := runtime.Caller(0)
+				if !ok {
+					t.Fatal("failed to determine current test file")
+				}
+
+				projectRoot := filepath.Join(
+					filepath.Dir(currentFile),
+					"..",
+				)
+
+				testServerCommand = filepath.Join(
+					projectRoot,
+					"cmd",
+					"mcp-test-server",
+					"mcp-test-server",
+				)
+
+				if _, err := os.Stat(testServerCommand); err != nil {
+					t.Fatalf(
+						"test MCP server executable not found: %v",
+						err,
+					)
+				}
+
+				testCase.input = "mcp add test-server " + testServerCommand
 
 				initialConfig := &configpkg.Config{
 					Provider: configpkg.Provider{
@@ -639,7 +695,9 @@ func TestHandleCommand(t *testing.T) {
 				}
 			}
 
-			if testCase.input == "mcp remove test-server" {
+			isMCPRemoveTest := testCase.input == "mcp remove test-server"
+
+			if isMCPRemoveTest {
 				originalDir, err := os.Getwd()
 				if err != nil {
 					t.Fatalf("failed to get working directory: %v", err)
@@ -698,10 +756,12 @@ func TestHandleCommand(t *testing.T) {
 				sessionStore,
 				agentClient,
 				appConfig,
+				mcpRuntime,
+				registry,
 				&output,
 			)
 
-			if testCase.input == "mcp add test-server ./test-server --port 8080" {
+			if isMCPAddTest {
 				savedConfig, err := configpkg.Load(
 					filepath.Join("config", "config.json"),
 				)
@@ -729,25 +789,23 @@ func TestHandleCommand(t *testing.T) {
 					)
 				}
 
-				if server.Command != "./test-server" {
+				if server.Command != testServerCommand {
 					t.Fatalf(
-						"expected command %q, got %q",
-						"./test-server",
+						"expected server command %q, got %q",
+						testServerCommand,
 						server.Command,
 					)
 				}
 
-				if len(server.Args) != 2 ||
-					server.Args[0] != "--port" ||
-					server.Args[1] != "8080" {
+				if !registry.Has("test_tool") {
 					t.Fatalf(
-						"expected args [--port 8080], got %v",
-						server.Args,
+						"expected MCP tool %q to be registered immediately",
+						"test_tool",
 					)
 				}
 			}
 
-			if testCase.input == "mcp remove test-server" {
+			if isMCPRemoveTest {
 				savedConfig, err := configpkg.Load(
 					filepath.Join("config", "config.json"),
 				)
