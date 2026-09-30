@@ -1,9 +1,10 @@
 package session
 
 import (
-	providerpkg "agent-harness/internal/provider"
 	"encoding/json"
 	"time"
+
+	providerpkg "agent-harness/internal/provider"
 )
 
 type Session struct {
@@ -28,6 +29,10 @@ func NewSession(id string) *Session {
 
 // Rename updates the session display name.
 func (session *Session) Rename(name string) {
+	if session.Metadata == nil {
+		session.Metadata = make(map[string]string)
+	}
+
 	session.Metadata["name"] = name
 	session.UpdatedAt = time.Now()
 }
