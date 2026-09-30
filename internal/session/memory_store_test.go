@@ -64,37 +64,57 @@ func TestMemoryStoreGet(t *testing.T) {
 // Test for Set function
 func TestMemoryStoreSet(t *testing.T) {
 	testCases := []struct {
-		name string
-		id   string
+		name        string
+		session     *Session
+		expectError bool
 	}{
 		{
-			name: "sets session",
-			id:   "test-session",
+			name:    "sets session",
+			session: NewSession("test-session"),
 		},
 		{
-			name: "sets another session",
-			id:   "session-123",
+			name:    "sets another session",
+			session: NewSession("session-123"),
+		},
+		{
+			name:        "rejects nil session",
+			session:     nil,
+			expectError: true,
+		},
+		{
+			name: "rejects empty session ID",
+			session: &Session{
+				ID: "",
+			},
+			expectError: true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			store := NewMemoryStore()
-			session := NewSession(testCase.id)
 
-			err := store.Set(session)
+			err := store.Set(testCase.session)
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				return
+			}
 
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			storedSession, err := store.Get(testCase.id)
+			storedSession, err := store.Get(testCase.session.ID)
 
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			if storedSession != session {
+			if storedSession != testCase.session {
 				t.Fatal("expected stored session to match original session")
 			}
 		})
