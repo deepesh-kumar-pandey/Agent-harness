@@ -556,7 +556,7 @@ func TestHandleCommand(t *testing.T) {
 			agentClient := agentpkg.NewAgent(registry)
 
 			t.Cleanup(func() {
-				if err := mcpRuntime.Close(); err != nil {
+				if err := mcpRuntime.Close(registry); err != nil {
 					t.Fatalf("failed to close MCP runtime: %v", err)
 				}
 			})
@@ -849,10 +849,20 @@ func TestHandleCommand(t *testing.T) {
 			}
 
 			if isMCPRemoveTest {
-				err := mcpRuntime.DisconnectServer("test-server")
+				err := mcpRuntime.DisconnectServer(
+					"test-server",
+					registry,
+				)
 				if err == nil {
 					t.Fatal(
 						"expected test-server session to already be disconnected",
+					)
+				}
+
+				if registry.Has("test_tool") {
+					t.Fatalf(
+						"expected MCP tool %q to be removed",
+						"test_tool",
 					)
 				}
 
