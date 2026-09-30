@@ -425,6 +425,17 @@ func handleCommand(
 				}
 			}
 
+			// Find the config path before changing runtime state.
+			configPath, err := getConfigPath()
+			if err != nil {
+				fmt.Fprintf(
+					output,
+					"Failed to find config file: %v\n",
+					err,
+				)
+				return CommandHandled
+			}
+
 			if err := mcpRuntime.ConnectServer(
 				context.Background(),
 				name,
@@ -447,22 +458,31 @@ func handleCommand(
 				Args:    args,
 			}
 
+			originalServerCount := len(appConfig.MCP.Servers)
+
 			appConfig.MCP.Servers = append(
 				appConfig.MCP.Servers,
 				server,
 			)
 
-			configPath, err := getConfigPath()
-			if err != nil {
-				fmt.Fprintf(
-					output,
-					"Failed to find config file: %v\n",
-					err,
-				)
-				return CommandHandled
-			}
-
 			if err := configpkg.Save(configPath, appConfig); err != nil {
+				// Restore the in-memory config.
+				appConfig.MCP.Servers = appConfig.MCP.Servers[:originalServerCount]
+
+				// Disconnect the runtime connection and remove its tools.
+				if disconnectErr := mcpRuntime.DisconnectServer(
+					name,
+					registry,
+				); disconnectErr != nil {
+					fmt.Fprintf(
+						output,
+						"Failed to save config: %v; failed to roll back MCP connection: %v\n",
+						err,
+						disconnectErr,
+					)
+					return CommandHandled
+				}
+
 				fmt.Fprintf(
 					output,
 					"Failed to save config: %v\n",
