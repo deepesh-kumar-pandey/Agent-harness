@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	providerpkg "agent-harness/internal/provider"
@@ -48,6 +49,10 @@ func Import(data []byte) (*Session, error) {
 
 	if err := json.Unmarshal(data, &session); err != nil {
 		return nil, err
+	}
+
+	if session.ID == "" {
+		return nil, fmt.Errorf("session ID must not be empty")
 	}
 
 	return &session, nil
