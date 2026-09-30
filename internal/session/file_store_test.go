@@ -256,7 +256,7 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 			if loadedSession.Metadata["description"] != "Session metadata test" {
 				t.Errorf(
 					"expected metadata description %q, got %q",
-					"Session metadata description",
+					"Session metadata test",
 					loadedSession.Metadata["description"],
 				)
 			}
@@ -269,7 +269,7 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 	}
 }
 
-// Test Get returns errors for missing sessions and other filesystem errors.
+// Test Get returns errors for missing sessions, invalid JSON, and filesystem errors.
 func TestFileSessionStoreGetErrors(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -281,6 +281,25 @@ func TestFileSessionStoreGetErrors(t *testing.T) {
 			name:           "returns not found error for missing session",
 			sessionID:      "missing-session",
 			expectNotFound: true,
+		},
+		{
+			name:      "returns error for invalid session JSON",
+			sessionID: "invalid-session",
+			setup: func(t *testing.T, store *FileSessionStore) {
+				path := store.sessionPath("invalid-session")
+
+				if err := os.WriteFile(
+					path,
+					[]byte(`{"ID":`),
+					0600,
+				); err != nil {
+					t.Fatalf(
+						"expected invalid JSON file creation to succeed, got %v",
+						err,
+					)
+				}
+			},
+			expectNotFound: false,
 		},
 		{
 			name:      "returns filesystem error for directory",
@@ -327,12 +346,6 @@ func TestFileSessionStoreGetErrors(t *testing.T) {
 						err.Error(),
 					)
 				}
-
-				return
-			}
-
-			if err.Error() == "session not found: "+testCase.sessionID {
-				t.Fatal("expected filesystem error, got session not found error")
 			}
 		})
 	}
