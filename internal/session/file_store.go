@@ -23,6 +23,10 @@ func (store *FileSessionStore) Set(session *Session) error {
 		return fmt.Errorf("session cannot be nil")
 	}
 
+	if session.ID == "" {
+		return fmt.Errorf("session ID cannot be empty")
+	}
+
 	if err := ensureDir(store.dir); err != nil {
 		return err
 	}
