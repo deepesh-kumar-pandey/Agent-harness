@@ -40,7 +40,7 @@ func TestNewFileSessionStore(t *testing.T) {
 	}
 }
 
-// Test Set stores a session and rejects nil sessions.
+// Test Set stores a session and rejects nil or empty-ID sessions.
 func TestFileSessionStoreSet(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -55,6 +55,13 @@ func TestFileSessionStoreSet(t *testing.T) {
 		{
 			name:        "rejects nil session",
 			session:     nil,
+			expectError: true,
+		},
+		{
+			name: "rejects empty session ID",
+			session: &Session{
+				ID: "",
+			},
 			expectError: true,
 		},
 	}
