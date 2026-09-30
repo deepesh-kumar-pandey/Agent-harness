@@ -1183,3 +1183,204 @@ func TestHandleCommandMCPAddRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 }
+
+// Test that MCP remove rolls back when config saving fails.
+func TestHandleCommandMCPRemoveRollsBackOnConfigSaveFailure(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	tempDir := t.TempDir()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf(
+				"failed to restore working directory: %v",
+				err,
+			)
+		}
+	})
+
+	if err := os.MkdirAll("config", 0755); err != nil {
+		t.Fatalf(
+			"failed to create config directory: %v",
+			err,
+		)
+	}
+
+	// Locate the MCP test server executable.
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to determine current test file")
+	}
+
+	projectRoot := filepath.Join(
+		filepath.Dir(currentFile),
+		"..",
+	)
+
+	testServerCommand := filepath.Join(
+		projectRoot,
+		"cmd",
+		"mcp-test-server",
+		"mcp-test-server",
+	)
+
+	if _, err := os.Stat(testServerCommand); err != nil {
+		t.Fatalf(
+			"test MCP server executable not found: %v",
+			err,
+		)
+	}
+
+	// Make config.json a directory so Save() fails.
+	configPath := filepath.Join("config", "config.json")
+
+	if err := os.Mkdir(configPath, 0755); err != nil {
+		t.Fatalf(
+			"failed to create invalid config path: %v",
+			err,
+		)
+	}
+
+	var output strings.Builder
+
+	sessionStore := sessionpkg.NewSessionStore()
+	currentSession := sessionpkg.NewSession("test-session")
+
+	if err := sessionStore.Set(currentSession); err != nil {
+		t.Fatalf(
+			"failed to create session: %v",
+			err,
+		)
+	}
+
+	registry := toolspkg.NewToolRegistry()
+	mcpRuntime := mcppkg.NewRuntime()
+	agentClient := agentpkg.NewAgent(registry)
+
+	if err := agentClient.SetSession(currentSession); err != nil {
+		t.Fatalf(
+			"failed to set agent session: %v",
+			err,
+		)
+	}
+
+	appConfig := &configpkg.Config{
+		Provider: configpkg.Provider{
+			Name:     "ollama",
+			Model:    "llama3.1",
+			BaseURL:  "http://localhost:11434",
+			Endpoint: "/api/chat",
+		},
+		MCP: configpkg.MCPConfig{
+			Servers: []configpkg.MCPServer{
+				{
+					Name:    "test-server",
+					Command: testServerCommand,
+				},
+			},
+		},
+	}
+
+	t.Cleanup(func() {
+		if err := mcpRuntime.Close(registry); err != nil {
+			t.Fatalf(
+				"failed to close MCP runtime: %v",
+				err,
+			)
+		}
+	})
+
+	// Connect the server before attempting removal.
+	if err := mcpRuntime.ConnectServer(
+		context.Background(),
+		"test-server",
+		testServerCommand,
+		[]string{},
+		registry,
+	); err != nil {
+		t.Fatalf(
+			"failed to connect test MCP server: %v",
+			err,
+		)
+	}
+
+	if !registry.Has("test_tool") {
+		t.Fatalf(
+			"expected MCP tool %q to be registered",
+			"test_tool",
+		)
+	}
+
+	got := handleCommand(
+		"mcp remove test-server",
+		"test-model",
+		"test-source",
+		&currentSession,
+		sessionStore,
+		agentClient,
+		appConfig,
+		mcpRuntime,
+		registry,
+		&output,
+	)
+
+	if got != CommandHandled {
+		t.Fatalf(
+			"handleCommand() = %v, expected %v",
+			got,
+			CommandHandled,
+		)
+	}
+
+	// The command should report the config save failure.
+	if !strings.Contains(
+		output.String(),
+		"Failed to save config:",
+	) {
+		t.Fatalf(
+			"expected config save failure, got %q",
+			output.String(),
+		)
+	}
+
+	// The failed save must restore the MCP configuration.
+	if len(appConfig.MCP.Servers) != 1 {
+		t.Fatalf(
+			"expected 1 MCP server after rollback, got %d",
+			len(appConfig.MCP.Servers),
+		)
+	}
+
+	if appConfig.MCP.Servers[0].Name != "test-server" {
+		t.Fatalf(
+			"expected server %q after rollback, got %q",
+			"test-server",
+			appConfig.MCP.Servers[0].Name,
+		)
+	}
+
+	// The MCP connection and its tools must also be restored.
+	if !registry.Has("test_tool") {
+		t.Fatalf(
+			"expected MCP tool %q to be restored after rollback",
+			"test_tool",
+		)
+	}
+
+	if err := mcpRuntime.DisconnectServer(
+		"test-server",
+		registry,
+	); err != nil {
+		t.Fatalf(
+			"expected test-server to remain connected after rollback: %v",
+			err,
+		)
+	}
+}
