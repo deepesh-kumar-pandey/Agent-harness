@@ -434,13 +434,28 @@ func TestAgentRunMCPTool(t *testing.T) {
 
 	registry := toolspkg.NewToolRegistry()
 
-	err = mcppkg.RegisterTools(
+	registeredTools, err := mcppkg.RegisterTools(
 		ctx,
 		clientSession,
 		registry,
 	)
 	if err != nil {
 		t.Fatalf("failed to register MCP tools: %v", err)
+	}
+
+	if len(registeredTools) != 1 {
+		t.Fatalf(
+			"expected 1 registered MCP tool, got %d",
+			len(registeredTools),
+		)
+	}
+
+	if registeredTools[0].Name() != "mcp-test-tool" {
+		t.Fatalf(
+			"expected registered MCP tool %q, got %q",
+			"mcp-test-tool",
+			registeredTools[0].Name(),
+		)
 	}
 
 	agent := NewAgent(registry)
