@@ -26,6 +26,10 @@ func (store *SessionStore) Set(session *Session) error {
 		return fmt.Errorf("session cannot be nil")
 	}
 
+	if session.ID == "" {
+		return fmt.Errorf("session ID cannot be empty")
+	}
+
 	store.sessions[session.ID] = session
 	return nil
 }
