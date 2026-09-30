@@ -223,8 +223,27 @@ func TestRegisterTools(t *testing.T) {
 
 	registry := toolspkg.NewToolRegistry()
 
-	if err := RegisterTools(ctx, session, registry); err != nil {
-		t.Fatalf("expected tools to register successfully, got error: %v", err)
+	registeredTools, err := RegisterTools(ctx, session, registry)
+	if err != nil {
+		t.Fatalf(
+			"expected tools to register successfully, got error: %v",
+			err,
+		)
+	}
+
+	if len(registeredTools) != 1 {
+		t.Fatalf(
+			"expected 1 registered tool, got %d",
+			len(registeredTools),
+		)
+	}
+
+	if registeredTools[0].Name() != "test-tool" {
+		t.Fatalf(
+			"expected registered tool name %q, got %q",
+			"test-tool",
+			registeredTools[0].Name(),
+		)
 	}
 
 	if !registry.Has("test-tool") {
@@ -233,11 +252,18 @@ func TestRegisterTools(t *testing.T) {
 
 	tool, err := registry.Get("test-tool")
 	if err != nil {
-		t.Fatalf("expected registered tool to be retrieved, got error: %v", err)
+		t.Fatalf(
+			"expected registered tool to be retrieved, got error: %v",
+			err,
+		)
 	}
 
 	if tool.Name() != "test-tool" {
-		t.Fatalf("expected tool name %q, got %q", "test-tool", tool.Name())
+		t.Fatalf(
+			"expected tool name %q, got %q",
+			"test-tool",
+			tool.Name(),
+		)
 	}
 
 	if tool.Description() != "test tool" {
