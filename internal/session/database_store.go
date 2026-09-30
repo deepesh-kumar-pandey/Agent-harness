@@ -63,6 +63,10 @@ func (store *DatabaseSessionStore) Set(session *Session) error {
 		return fmt.Errorf("session cannot be nil")
 	}
 
+	if session.ID == "" {
+		return fmt.Errorf("session ID cannot be empty")
+	}
+
 	metadata, err := json.Marshal(session.Metadata)
 	if err != nil {
 		return err
