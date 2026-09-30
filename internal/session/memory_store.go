@@ -26,6 +26,14 @@ func (s *MemoryStore) Get(id string) (*Session, error) {
 }
 
 func (s *MemoryStore) Set(session *Session) error {
+	if session == nil {
+		return fmt.Errorf("session cannot be nil")
+	}
+
+	if session.ID == "" {
+		return fmt.Errorf("session ID cannot be empty")
+	}
+
 	s.sessions[session.ID] = session
 	return nil
 }
