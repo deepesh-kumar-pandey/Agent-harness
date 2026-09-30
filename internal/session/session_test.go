@@ -258,6 +258,21 @@ func TestSessionImport(t *testing.T) {
 	}
 }
 
+// TestSessionImportWithEmptyID verifies importing a session with no ID fails.
+func TestSessionImportWithEmptyID(t *testing.T) {
+	data := []byte(`{}`)
+
+	imported, err := Import(data)
+
+	if err == nil {
+		t.Fatal("expected error while importing session with empty ID")
+	}
+
+	if imported != nil {
+		t.Fatal("expected nil session when import fails")
+	}
+}
+
 // TestSessionRenameWithNilMetadata verifies renaming initializes nil metadata.
 func TestSessionRenameWithNilMetadata(t *testing.T) {
 	session := &Session{
