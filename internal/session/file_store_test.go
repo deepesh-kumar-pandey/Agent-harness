@@ -256,7 +256,7 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 			if loadedSession.Metadata["description"] != "Session metadata test" {
 				t.Errorf(
 					"expected metadata description %q, got %q",
-					"Session metadata test",
+					"Session metadata description",
 					loadedSession.Metadata["description"],
 				)
 			}
@@ -269,18 +269,72 @@ func TestFileSessionStoreSetAndGetMessages(t *testing.T) {
 	}
 }
 
-// Test Get returns an error for a missing session.
-func TestFileSessionStoreGetMissing(t *testing.T) {
-	store := NewFileSessionStore(t.TempDir())
+// Test Get returns errors for missing sessions and other filesystem errors.
+func TestFileSessionStoreGetErrors(t *testing.T) {
+	testCases := []struct {
+		name           string
+		sessionID      string
+		setup          func(t *testing.T, store *FileSessionStore)
+		expectNotFound bool
+	}{
+		{
+			name:           "returns not found error for missing session",
+			sessionID:      "missing-session",
+			expectNotFound: true,
+		},
+		{
+			name:      "returns filesystem error for directory",
+			sessionID: "directory-session",
+			setup: func(t *testing.T, store *FileSessionStore) {
+				path := store.sessionPath("directory-session")
 
-	session, err := store.Get("missing-session")
-
-	if err == nil {
-		t.Fatal("expected error, got nil")
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatalf(
+						"expected directory creation to succeed, got %v",
+						err,
+					)
+				}
+			},
+			expectNotFound: false,
+		},
 	}
 
-	if session != nil {
-		t.Fatal("expected nil session, got session")
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := NewFileSessionStore(t.TempDir())
+
+			if testCase.setup != nil {
+				testCase.setup(t, store)
+			}
+
+			session, err := store.Get(testCase.sessionID)
+
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if session != nil {
+				t.Fatal("expected nil session, got session")
+			}
+
+			if testCase.expectNotFound {
+				expected := "session not found: " + testCase.sessionID
+
+				if err.Error() != expected {
+					t.Fatalf(
+						"expected error %q, got %q",
+						expected,
+						err.Error(),
+					)
+				}
+
+				return
+			}
+
+			if err.Error() == "session not found: "+testCase.sessionID {
+				t.Fatal("expected filesystem error, got session not found error")
+			}
+		})
 	}
 }
 
