@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,7 +65,11 @@ func (store *FileSessionStore) Set(session *Session) error {
 func (store *FileSessionStore) Get(id string) (*Session, error) {
 	data, err := os.ReadFile(store.sessionPath(id))
 	if err != nil {
-		return nil, fmt.Errorf("session not found: %s", id)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("session not found: %s", id)
+		}
+
+		return nil, err
 	}
 
 	var session Session
