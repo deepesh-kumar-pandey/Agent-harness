@@ -53,6 +53,13 @@ func TestSessionStoreSet(t *testing.T) {
 			session:     nil,
 			expectError: true,
 		},
+		{
+			name: "rejects empty session ID",
+			session: &Session{
+				ID: "",
+			},
+			expectError: true,
+		},
 	}
 
 	for _, testCase := range testCases {
