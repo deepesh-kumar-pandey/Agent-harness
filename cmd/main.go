@@ -507,7 +507,7 @@ func handleCommand(
 				return CommandHandled
 			}
 
-			if err := mcpRuntime.DisconnectServer(name); err != nil {
+			if err := mcpRuntime.DisconnectServer(name, registry); err != nil {
 				fmt.Fprintf(
 					output,
 					"Failed to disconnect MCP server %q: %v\n",
@@ -577,7 +577,7 @@ func main() {
 
 	mcpRuntime := mcppkg.NewRuntime()
 	defer func() {
-		if err := mcpRuntime.Close(); err != nil {
+		if err := mcpRuntime.Close(registry); err != nil {
 			fmt.Println("MCP shutdown error:", err)
 		}
 	}()
