@@ -67,13 +67,15 @@ func RegisterTools(
 	ctx context.Context,
 	session *mcpsdk.ClientSession,
 	registry *toolspkg.ToolRegistry,
-) error {
+) ([]toolspkg.Tool, error) {
 	client := NewClient()
 
 	mcpTools, err := client.ListTools(ctx, session)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	registeredTools := make([]toolspkg.Tool, 0, len(mcpTools))
 
 	for _, mcpTool := range mcpTools {
 		tool := NewTool(*mcpTool)
@@ -81,7 +83,8 @@ func RegisterTools(
 		adapter := NewToolAdapter(ctx, tool, session)
 
 		registry.Register(adapter.Name(), adapter)
+		registeredTools = append(registeredTools, adapter)
 	}
 
-	return nil
+	return registeredTools, nil
 }
