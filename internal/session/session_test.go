@@ -257,3 +257,28 @@ func TestSessionImport(t *testing.T) {
 		)
 	}
 }
+
+// TestSessionRenameWithNilMetadata verifies renaming initializes nil metadata.
+func TestSessionRenameWithNilMetadata(t *testing.T) {
+	session := &Session{
+		ID: "test-session",
+	}
+
+	session.Rename("My Session")
+
+	if session.Metadata == nil {
+		t.Fatal("expected metadata to be initialized")
+	}
+
+	if session.Metadata["name"] != "My Session" {
+		t.Errorf(
+			"expected session name %q, got %q",
+			"My Session",
+			session.Metadata["name"],
+		)
+	}
+
+	if session.UpdatedAt.IsZero() {
+		t.Fatal("expected UpdatedAt to be updated")
+	}
+}
