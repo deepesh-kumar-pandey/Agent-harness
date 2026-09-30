@@ -72,13 +72,45 @@ func TestNewDatabaseSessionStore(t *testing.T) {
 	}
 }
 
-// TestDatabaseSessionStoreSet tests storing a session, metadata, and messages in the database.
+// TestDatabaseSessionStoreSet tests storing a session and rejecting invalid sessions.
 func TestDatabaseSessionStoreSet(t *testing.T) {
 	testCases := []struct {
-		name string
+		name        string
+		session     *Session
+		expectError bool
 	}{
 		{
 			name: "stores session and messages",
+			session: &Session{
+				ID:        "test-session",
+				CreatedAt: time.Now().Add(-time.Hour),
+				UpdatedAt: time.Now(),
+				Metadata: map[string]string{
+					"name": "Test Session",
+				},
+				Messages: []providerpkg.Message{
+					{
+						Role:    "user",
+						Content: "Hello",
+					},
+					{
+						Role:    "assistant",
+						Content: "Hello! How can I help you?",
+					},
+				},
+			},
+		},
+		{
+			name:        "rejects nil session",
+			session:     nil,
+			expectError: true,
+		},
+		{
+			name: "rejects empty session ID",
+			session: &Session{
+				ID: "",
+			},
+			expectError: true,
 		},
 	}
 
@@ -97,29 +129,17 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 
 			defer store.db.Close()
 
-			createdAt := time.Now().Add(-time.Hour)
-			updatedAt := time.Now()
+			err = store.Set(testCase.session)
 
-			session := &Session{
-				ID:        "test-session",
-				CreatedAt: createdAt,
-				UpdatedAt: updatedAt,
-				Metadata: map[string]string{
-					"name": "Test Session",
-				},
-				Messages: []providerpkg.Message{
-					{
-						Role:    "user",
-						Content: "Hello",
-					},
-					{
-						Role:    "assistant",
-						Content: "Hello! How can I help you?",
-					},
-				},
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				return
 			}
 
-			if err := store.Set(session); err != nil {
+			if err != nil {
 				t.Fatalf(
 					"expected no error while setting session, got %v",
 					err,
@@ -133,7 +153,7 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 				SELECT id, metadata
 				FROM sessions
 				WHERE id = ?
-			`, session.ID).Scan(&sessionID, &metadata)
+			`, testCase.session.ID).Scan(&sessionID, &metadata)
 
 			if err != nil {
 				t.Fatalf(
@@ -142,10 +162,10 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 				)
 			}
 
-			if sessionID != session.ID {
+			if sessionID != testCase.session.ID {
 				t.Fatalf(
 					"expected session ID %s, got %s",
-					session.ID,
+					testCase.session.ID,
 					sessionID,
 				)
 			}
@@ -163,7 +183,7 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 				SELECT COUNT(*)
 				FROM messages
 				WHERE session_id = ?
-			`, session.ID).Scan(&messageCount)
+			`, testCase.session.ID).Scan(&messageCount)
 
 			if err != nil {
 				t.Fatalf(
