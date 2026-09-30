@@ -85,7 +85,11 @@ func (store *FileSessionStore) Delete(id string) error {
 	err := os.Remove(store.sessionPath(id))
 
 	if err != nil {
-		return fmt.Errorf("session not found: %s", id)
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("session not found: %s", id)
+		}
+
+		return err
 	}
 
 	return nil
