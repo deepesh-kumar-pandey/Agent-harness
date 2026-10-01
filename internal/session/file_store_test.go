@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	providerpkg "agent-harness/internal/provider"
@@ -351,19 +352,54 @@ func TestFileSessionStoreGetErrors(t *testing.T) {
 	}
 }
 
-// Test Delete removes an existing session and rejects missing sessions.
+// Test Delete removes existing sessions and returns errors for missing sessions and filesystem errors.
 func TestFileSessionStoreDelete(t *testing.T) {
 	testCases := []struct {
 		name        string
-		addSession  bool
+		setup       func(t *testing.T, store *FileSessionStore)
 		expectError bool
+		errorText   string
 	}{
 		{
-			name:       "deletes existing session",
-			addSession: true,
+			name: "deletes existing session",
+			setup: func(t *testing.T, store *FileSessionStore) {
+				if err := store.Set(NewSession("test-session")); err != nil {
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
+				}
+			},
+			expectError: false,
 		},
 		{
 			name:        "returns error for missing session",
+			expectError: true,
+			errorText:   "session not found: test-session",
+		},
+		{
+			name: "returns filesystem error for directory",
+			setup: func(t *testing.T, store *FileSessionStore) {
+				path := store.sessionPath("test-session")
+
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatalf(
+						"expected directory creation to succeed, got %v",
+						err,
+					)
+				}
+
+				if err := os.WriteFile(
+					filepath.Join(path, "test.txt"),
+					[]byte("test"),
+					0600,
+				); err != nil {
+					t.Fatalf(
+						"expected file creation inside directory to succeed, got %v",
+						err,
+					)
+				}
+			},
 			expectError: true,
 		},
 	}
@@ -373,13 +409,8 @@ func TestFileSessionStoreDelete(t *testing.T) {
 			dir := t.TempDir()
 			store := NewFileSessionStore(dir)
 
-			if testCase.addSession {
-				if err := store.Set(NewSession("test-session")); err != nil {
-					t.Fatalf(
-						"expected no error while setting session, got %v",
-						err,
-					)
-				}
+			if testCase.setup != nil {
+				testCase.setup(t, store)
 			}
 
 			err := store.Delete("test-session")
@@ -389,6 +420,14 @@ func TestFileSessionStoreDelete(t *testing.T) {
 					t.Fatal("expected error, got nil")
 				}
 
+				if testCase.errorText != "" && err.Error() != testCase.errorText {
+					t.Fatalf(
+						"expected error %q, got %q",
+						testCase.errorText,
+						err.Error(),
+					)
+				}
+
 				return
 			}
 
@@ -396,10 +435,8 @@ func TestFileSessionStoreDelete(t *testing.T) {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			_, err = store.Get("test-session")
-
-			if err == nil {
-				t.Fatal("expected session to be deleted")
+			if _, err := os.Stat(store.sessionPath("test-session")); !os.IsNotExist(err) {
+				t.Fatal("expected session file to be deleted")
 			}
 		})
 	}
