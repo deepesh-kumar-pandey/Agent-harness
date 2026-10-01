@@ -1,6 +1,6 @@
 # Agent Harness
 
-Agent Harness is a Go-based runtime for building and running tool-using AI agents.
+Agent Harness is a Go application and runtime for running a conversational agent that can call local tools and tools exposed by MCP servers. The interactive CLI currently connects to Ollama or OpenAI, keeps conversation history in file-backed sessions, and routes provider tool calls through a shared tool registry.
 
 It provides:
 
@@ -17,7 +17,7 @@ It provides:
 * Local Ollama model management
 * Automated testing and CI
 
-The project is designed with a **local-first architecture** while keeping the core runtime provider-neutral, modular, testable, and extensible.
+The core is provider-neutral and modular. Ollama provides the local-first path; OpenAI is also supported when an API key is configured.
 
 ---
 
@@ -62,8 +62,8 @@ The project currently supports:
 * CLI session loading
 * CLI session deletion
 * Interactive CLI
-* CLI model inspection
-* CLI session inspection
+* CLI model display and startup model selection for Ollama
+* CLI display of the active session ID
 * Local Ollama model management
 * Unit and integration tests
 * Go formatting and static analysis
@@ -79,6 +79,8 @@ Current development is focused on:
 * Adding additional providers
 * Increasing runtime extensibility
 
+The interactive CLI currently uses the file session store in `.sessions/`. The in-memory and SQLite stores are available as package implementations but are not selected by the CLI.
+
 ---
 
 # Features
@@ -92,16 +94,14 @@ Currently integrated:
 * Ollama
 * OpenAI
 
-The Provider layer supports:
+The common `Provider` interface defines `Chat(request)`, which sends a provider-neutral request and returns response text and any tool calls.
 
-* Chat requests
-* Chat responses
-* Conversation messages
-* Tool definitions
-* Tool calls
-* Model listing where supported
-* Model availability checks where supported
-* Model pulling where supported
+Ollama additionally implements the separate `LocalModelManager` interface:
+
+* `ListModels() ([]string, error)` sends a GET request to Ollama's `/api/tags` endpoint and returns the model names. Network, status, decoding, and empty-name errors are returned.
+* `PullModel(name string) error` sends a POST request to Ollama's `/api/pull` endpoint and returns request, network, non-200 status, or response-read errors.
+
+`(*OllamaProvider).HasModel(name string) (bool, error)` calls `ListModels()` and checks for an exact name match, returning listing errors unchanged.
 
 Provider-specific behavior remains behind the Provider abstraction.
 
@@ -113,7 +113,7 @@ The provider factory creates the appropriate provider implementation:
 NewProvider
 ```
 
-`NewProvider` creates a provider based on the configured provider name, base URL, and API key.
+`NewProvider(name, baseURL, apiKey string) (Provider, error)` creates an `ollama` or `openai` provider with the supplied base URL. It passes the key to OpenAI, ignores it for Ollama, and returns an error for unsupported names. The CLI loads an OpenAI API key from the credential store before calling the factory.
 
 Currently supported providers are:
 
@@ -133,7 +133,7 @@ This creates an Ollama provider.
 For a provider requiring credentials:
 
 ```text
-NewProvider("openai", "https://api.openai.com", apiKey)
+NewProvider("openai", "https://api.openai.com/v1", apiKey)
 ```
 
 ### Provider API
@@ -144,7 +144,7 @@ The common Provider interface exposes:
 Chat
 ```
 
-`Chat` sends a provider-neutral chat request and returns the model response, including any requested tool calls.
+`Chat(request ChatRequest) (ChatResponse, error)` sends the model, messages, and optional tool definitions to the configured provider. It returns response text and normalized tool calls, or an error for invalid requests, transport/status failures, response-decoding failures, or a missing OpenAI choice.
 
 Example:
 
@@ -178,21 +178,9 @@ ListModels
 PullModel
 ```
 
-`ListModels` returns locally available models where supported.
+Only Ollama implements `LocalModelManager` in the current code; OpenAI supports chat requests but not model listing or pulling.
 
-Example:
-
-```text
-ListModels()
-```
-
-`PullModel` downloads or prepares a local model where supported.
-
-Example:
-
-```text
-PullModel("llama3.1")
-```
+`RequiresAPIKey(name string) bool` reports whether a provider requires an API key (`true` for `openai`). It returns `false` for other names, including unknown names, so `NewProvider` can report unsupported providers.
 
 ---
 
@@ -209,7 +197,7 @@ The runtime supports:
 * Tool calls
 * Tool results
 * Multiple tool calls
-* Configurable maximum tool-call iterations
+* Configurable maximum number of tool calls
 * Provider-neutral execution
 * Session-aware conversation history
 
@@ -222,13 +210,15 @@ When a Session is assigned, the Session becomes the source of conversation histo
 
 ## Agent Operations
 
+`NewAgent(registry *tools.ToolRegistry) *Agent` creates an Agent backed by that registry and an empty in-memory `Conversation`.
+
 ### `SetSession`
 
 ```text
-SetSession(session)
+SetSession(session *session.Session) error
 ```
 
-Assigns a Session to the Agent and makes that Session the active source of conversation history.
+Assigns a non-nil Session and makes its `Messages` slice the active conversation history. It returns an error for a nil Session; it does not copy the Session.
 
 Example:
 
@@ -238,13 +228,21 @@ err := agent.SetSession(session)
 
 After this operation, Agent conversation messages are associated with the assigned Session.
 
+### `AddMessage`
+
+```text
+AddMessage(message provider.Message) error
+```
+
+Appends the message to the active Session or, when no Session is assigned, to the Agent's in-memory Conversation. It rejects a message with an empty role.
+
 ### `GetMessages`
 
 ```text
-GetMessages()
+GetMessages() []provider.Message
 ```
 
-Returns the messages associated with the Agent's active conversation or assigned Session.
+Returns the active Session's `Messages` slice or the in-memory Conversation's message slice. The returned slice is not copied.
 
 Example:
 
@@ -254,22 +252,34 @@ messages := agent.GetMessages()
 
 The returned messages can then be used by the runtime when constructing a Provider request.
 
+### Tool access
+
+* `GetToolSchemas() ([]map[string]any, error)` obtains all tool schemas from the registry and propagates registry/schema errors.
+* `ExecuteTool(name string, args map[string]any) (any, error)` looks up `name`, executes the tool with `args`, and returns lookup or tool errors.
+* `Run(name string, args map[string]any) (any, error)` delegates directly to `ExecuteTool`; the conversational provider/tool loop is `DefaultOrchestrator.RunAgent(request)`.
+
+The `Conversation` type backs an Agent that has no assigned Session:
+
+* `NewConversation() *Conversation` creates an empty message slice.
+* `(*Conversation).AddMessage(message provider.Message) error` rejects an empty role; otherwise appends the message and returns nil.
+* `(*Conversation).GetMessages() []provider.Message` returns the underlying history slice without copying it.
+
 ---
 
 # Tool System
 
 ## Tool Interface
 
-Tools expose a common interface containing:
+Tools implement this common interface:
 
 ```text
-Name
+Name() string
 
-Description
+Description() string
 
-Execute
+Execute(args map[string]any) (any, error)
 
-Schema
+Schema() map[string]any
 ```
 
 This allows different tool implementations to be treated uniformly.
@@ -285,10 +295,10 @@ The same abstraction is used for:
 #### `Name`
 
 ```text
-tool.Name()
+Name() string
 ```
 
-Returns the unique name used to identify the tool.
+Returns the tool name used by the registry and provider tool-call routing.
 
 Example:
 
@@ -299,10 +309,10 @@ tool.Name()
 #### `Description`
 
 ```text
-tool.Description()
+Description() string
 ```
 
-Returns a human-readable description of what the tool does.
+Returns a human-readable description supplied to the model.
 
 Example:
 
@@ -313,15 +323,15 @@ tool.Description()
 #### `Execute`
 
 ```text
-tool.Execute(ctx, arguments)
+Execute(args map[string]any) (any, error)
 ```
 
-Executes the tool using the provided arguments and returns the tool result.
+Executes the tool using the provided argument map and returns its result or an error.
 
 Example:
 
 ```text
-tool.Execute(ctx, arguments)
+tool.Execute(arguments)
 ```
 
 The exact arguments depend on the Tool implementation.
@@ -329,10 +339,10 @@ The exact arguments depend on the Tool implementation.
 #### `Schema`
 
 ```text
-tool.Schema()
+Schema() map[string]any
 ```
 
-Returns the parameter schema used by the model to understand the tool's expected arguments.
+Returns the parameter schema supplied to the model. Schema validation and argument semantics are implemented by each tool.
 
 Example:
 
@@ -344,7 +354,7 @@ tool.Schema()
 
 # Tool Registry
 
-The Tool Registry provides a central system for managing executable tools.
+`NewToolRegistry() *ToolRegistry` creates the registry and registers the built-in `calculator`, `shell`, and `filesystem` tools.
 
 It supports:
 
@@ -367,38 +377,38 @@ Schemas
 ### `Register`
 
 ```text
-Register(tool)
+Register(name string, tool Tool) (string, Tool)
 ```
 
-Adds a tool to the registry using its tool name.
+Adds or replaces the tool under `name`, prints a registration message, and returns the supplied name and tool.
 
 Example:
 
 ```text
-registry.Register(calculator)
+registry.Register("calculator", calculator)
 ```
 
 ### `Get`
 
 ```text
-Get(name)
+Get(name string) (Tool, error)
 ```
 
-Retrieves a registered tool by name.
+Retrieves a registered tool by name, or returns an error if it is absent.
 
 Example:
 
 ```text
-tool := registry.Get("calculator")
+tool, err := registry.Get("calculator")
 ```
 
 ### `Has`
 
 ```text
-Has(name)
+Has(name string) bool
 ```
 
-Checks whether a tool with the specified name is registered.
+Reports whether a tool with the specified name is registered.
 
 Example:
 
@@ -409,24 +419,24 @@ exists := registry.Has("calculator")
 ### `List`
 
 ```text
-List()
+List() []string
 ```
 
-Returns all registered tools.
+Returns the names of all registered tools. The order is unspecified.
 
 Example:
 
 ```text
-tools := registry.List()
+names := registry.List()
 ```
 
 ### `Remove`
 
 ```text
-Remove(name)
+Remove(name string) error
 ```
 
-Removes a registered tool by name.
+Removes a registered tool by name or returns an error if no such tool exists.
 
 Example:
 
@@ -437,7 +447,7 @@ registry.Remove("calculator")
 ### `Schemas`
 
 ```text
-Schemas()
+Schemas() ([]map[string]any, error)
 ```
 
 Returns the schemas of registered tools so they can be supplied to a model provider.
@@ -445,10 +455,10 @@ Returns the schemas of registered tools so they can be supplied to a model provi
 Example:
 
 ```text
-schemas := registry.Schemas()
+schemas, err := registry.Schemas()
 ```
 
-The registry provides the common execution layer used by both native tools and MCP tools.
+Returns each tool's name, description, and parameter schema. It returns an error if the registry is nil or a registered tool or its schema is nil. The registry is shared by built-in and adapted MCP tools.
 
 ---
 
@@ -456,7 +466,7 @@ The registry provides the common execution layer used by both native tools and M
 
 ## Calculator
 
-The Calculator tool supports:
+The built-in `calculator` tool takes an `operation` and a `numbers` array. It supports:
 
 ```text
 add
@@ -496,7 +506,7 @@ Division and modulus operations also handle invalid zero divisors.
 
 ## Shell
 
-The Shell tool allows controlled local command execution through the common Tool interface.
+The built-in `shell` tool launches an installed local executable with the supplied argument list. It does not invoke a shell to parse a command string.
 
 ### Shell Execution
 
@@ -511,34 +521,30 @@ runs the requested command and returns its output or an execution error.
 Example:
 
 ```text
-Execute("ls -la")
+Execute({"command": "ls", "args": ["-la"]})
 ```
 
-The command is executed through the Shell tool rather than being directly coupled to the Agent.
+`Shell.Execute(command, args...)` checks that the executable is available, then returns combined output or an error. Commands run with the permissions of the current process.
 
 ---
 
 ## Filesystem
 
-The Filesystem tool provides filesystem-related operations through the common Tool interface.
+The built-in `filesystem` tool operates on local paths through the common Tool interface.
 
 ### Filesystem Execution
 
-The filesystem execution operation:
+Its `Execute(args)` operation supports:
 
-```text
-Execute
-```
+* `read`: returns a file's contents.
+* `write`: writes the supplied `content` to a path.
+* `list`: returns directory entry names.
+* `exists`: reports whether a path exists.
+* `delete`: removes a path.
 
-performs the requested filesystem operation and returns the resulting data or an error.
+Each request supplies an `operation` and `path`; `write` also requires `content`.
 
-Example:
-
-```text
-Execute(...)
-```
-
-The exact operation and arguments depend on the filesystem tool request.
+This Agent tool is separate from the top-level `filesystem.FileSystem` helper, whose `Read`, `Write`, `List`, `Search`, and `Delete` methods operate directly on paths.
 
 ---
 
@@ -661,10 +667,10 @@ ListTools
 ### `NewClient`
 
 ```text
-NewClient(...)
+NewClient() *Client
 ```
 
-Creates a new MCP client using the configured client implementation.
+Creates an MCP client identified as `agent-harness` version `0.1.0`.
 
 Example:
 
@@ -675,10 +681,10 @@ client := mcp.NewClient()
 ### `Connect`
 
 ```text
-Connect(...)
+Connect(ctx context.Context, transport mcpsdk.Transport) (*mcpsdk.ClientSession, error)
 ```
 
-Establishes an MCP connection using the configured transport.
+Establishes an MCP connection over the supplied transport and returns its client session or a connection error.
 
 Example:
 
@@ -691,10 +697,10 @@ The returned ClientSession is used for subsequent MCP operations.
 ### `ConnectCommand`
 
 ```text
-ConnectCommand(...)
+ConnectCommand(ctx context.Context, command string, args []string) (*mcpsdk.ClientSession, error)
 ```
 
-Starts a local MCP server process and establishes an MCP connection using command-based transport.
+Starts `command` with `args` using `exec.CommandContext`, then connects with the MCP command transport. Returns the session or an error.
 
 Example:
 
@@ -709,10 +715,10 @@ session, err := client.ConnectCommand(
 ### `ListTools`
 
 ```text
-ListTools(...)
+ListTools(ctx context.Context, session *mcpsdk.ClientSession) ([]*mcpsdk.Tool, error)
 ```
 
-Retrieves the tools exposed by the connected MCP server.
+Requests the connected server's tool list and returns its tools, or the SDK error.
 
 Example:
 
@@ -773,7 +779,7 @@ Using `exec.CommandContext` allows the MCP server process to be associated with 
 The MCP tool wrapper is implemented in:
 
 ```text
-internal/mcp/tool.go
+internal/mcp/tools.go
 ```
 
 It provides:
@@ -811,18 +817,22 @@ tool.Description()
 tool.Schema()
 ```
 
+`Name() string` and `Description() string` return the remote tool metadata. `Schema() map[string]any` converts its input schema through JSON; it returns nil if the remote schema is nil or conversion fails.
+
+`NewTool(tool mcpsdk.Tool) *Tool` wraps the SDK tool value.
+
 ### `Execute`
 
 ```text
-Execute(...)
+Execute(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error)
 ```
 
-Sends the supplied arguments to the MCP server through the active MCP client session and returns the remote tool result.
+Calls the named remote tool with `args` through `session` using `ctx`, returning the MCP result or SDK error.
 
 Example:
 
 ```text
-result, err := tool.Execute(ctx, arguments)
+result, err := tool.Execute(ctx, session, arguments)
 ```
 
 ---
@@ -881,7 +891,9 @@ The Agent therefore does not need to know whether a tool originated from:
 
 ### Adapter Operations
 
-The adapter forwards the native Tool operations to the underlying MCP tool.
+The adapter implements the native `tools.Tool` interface. Its metadata and schema methods delegate to the MCP tool wrapper; its `Execute(args)` method invokes the MCP tool using the stored context and client session, then collects returned text content.
+
+`NewToolAdapter(ctx context.Context, tool *Tool, session *mcpsdk.ClientSession) *ToolAdapter` binds the wrapper to the context and client session used for calls. `Name() string`, `Description() string`, and `Schema() map[string]any` delegate to the wrapper. `Execute(args map[string]any) (any, error)` returns concatenated text content; it propagates call errors and turns an MCP `IsError` result into an error. Non-text result content is not included in the returned string.
 
 This includes:
 
@@ -904,7 +916,7 @@ adapter.Description()
 
 adapter.Schema()
 
-adapter.Execute(ctx, arguments)
+adapter.Execute(arguments)
 ```
 
 ---
@@ -925,10 +937,10 @@ This allows MCP tools to automatically become available to the Agent.
 The registration operation:
 
 ```text
-RegisterTools
+RegisterTools(ctx context.Context, session *mcpsdk.ClientSession, registry *toolspkg.ToolRegistry) ([]toolspkg.Tool, error)
 ```
 
-discovers available MCP tools and adds them to the native Tool Registry.
+discovers available MCP tools, wraps each in a `Tool` and `ToolAdapter`, registers the adapters under their tool names, and returns the registered tools. A discovery error is returned; registry registration itself has no error return.
 
 Example:
 
@@ -1002,15 +1014,17 @@ Creates a new MCP runtime with an empty set of active server sessions.
 runtime := mcp.NewRuntime()
 ```
 
+`NewRuntime() *Runtime` initializes empty maps for active client sessions and each server's registered tools.
+
 The Tool Registry is supplied when connecting a server because discovered MCP tools are registered during the connection process.
 
 ### `ConnectServer`
 
 ```text
-ConnectServer(ctx, name, command, args, registry)
+ConnectServer(ctx context.Context, name, command string, args []string, registry *toolspkg.ToolRegistry) error
 ```
 
-Connects to an MCP server, creates its client session, discovers its tools, and registers those tools into the provided Tool Registry.
+Connects to a command-launched MCP server, creates its client session, discovers its tools, and registers those tools into `registry`. It rejects duplicate active names and returns connection or registration errors; if registration fails, it closes the new session.
 
 Example:
 
@@ -1029,7 +1043,7 @@ The server becomes part of the active runtime immediately after a successful con
 ### `DisconnectServer`
 
 ```text
-DisconnectServer(name)
+DisconnectServer(name string, registry *toolspkg.ToolRegistry) error
 ```
 
 Disconnects an active MCP server session.
@@ -1037,15 +1051,15 @@ Disconnects an active MCP server session.
 Example:
 
 ```go
-err := runtime.DisconnectServer("test-server")
+err := runtime.DisconnectServer("test-server", registry)
 ```
 
-The active MCP client session is closed and removed from the runtime.
+The server's registered tools are removed only when the registry still maps those names to the same adapter instances, then its session is closed. It returns an error for an unknown active name or a session close failure.
 
 ### `Close`
 
 ```text
-Close()
+Close(registry *toolspkg.ToolRegistry) error
 ```
 
 Closes active MCP sessions and releases MCP runtime resources during application shutdown.
@@ -1053,8 +1067,10 @@ Closes active MCP sessions and releases MCP runtime resources during application
 Example:
 
 ```go
-defer runtime.Close()
+defer runtime.Close(registry)
 ```
+
+`Close` removes runtime-owned registered tools, attempts to close all active sessions, clears runtime maps, and returns the first close error, if any.
 
 ---
 
@@ -1396,14 +1412,13 @@ mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /tmp
 
 The command performs the following operations:
 
-1. Reads the current MCP configuration.
-2. Checks whether the server name already exists.
-3. Connects to the MCP server.
-4. Creates an MCP client session.
-5. Discovers the server's tools.
-6. Registers the discovered tools into the Tool Registry.
-7. Adds the server to the persistent configuration.
-8. Saves the updated configuration.
+1. Checks the loaded MCP configuration for a duplicate name.
+2. Finds the configuration file path.
+3. Connects to the MCP server and creates a client session.
+4. Discovers the server's tools and registers them in the Tool Registry.
+5. Adds the server to the loaded configuration and saves it.
+
+If saving fails, the CLI restores the in-memory configuration and disconnects the server.
 
 Example output:
 
@@ -1539,17 +1554,20 @@ The repository contains a small MCP server used for integration testing:
 cmd/mcp-test-server/main.go
 ```
 
-It exposes a test tool:
+It exposes two test tools:
 
 ```text
 test_tool
+error_tool
 ```
 
-The tool returns:
+`test_tool` returns:
 
 ```text
 MCP test tool executed successfully
 ```
+
+`error_tool` returns a deliberate error for adapter and runtime error-path tests.
 
 The test server uses the MCP SDK's stdio transport.
 
@@ -1684,15 +1702,18 @@ Get
 Delete
 ```
 
+`NewFileStore()` returns the file-backed implementation of `CredentialStore`.
+Its signature is `NewFileStore() (*FileStore, error)`; it resolves the current user's home directory and points the store at `~/.agent-harness/credentials.json`, returning a home-directory lookup error if resolution fails.
+
 ## Credential Operations
 
 ### `Set`
 
 ```text
-Set(provider, key)
+Set(provider string, key string) error
 ```
 
-Stores or updates the credential associated with a provider.
+Stores or updates the credential associated with a provider. It rejects an empty provider or key, creates the parent directory with mode `0700`, reads existing JSON when present, and writes the updated map with mode `0600`.
 
 Example:
 
@@ -1703,10 +1724,10 @@ credentials.Set("openai", apiKey)
 ### `Get`
 
 ```text
-Get(provider)
+Get(provider string) (string, error)
 ```
 
-Retrieves the stored credential for the specified provider.
+Retrieves the stored credential for the specified provider. It rejects an empty provider and returns `ErrCredentialNotFound` if the file or provider entry is missing; file and JSON decoding errors are returned.
 
 Example:
 
@@ -1719,10 +1740,10 @@ If no credential exists, the store returns a credential-not-found error.
 ### `Delete`
 
 ```text
-Delete(provider)
+Delete(provider string) error
 ```
 
-Removes the stored credential associated with the provider.
+Removes the stored credential associated with the provider and rewrites the JSON file with mode `0600`. It returns errors for an empty or unknown provider and for file/JSON failures.
 
 Example:
 
@@ -1737,6 +1758,8 @@ The current file-based credential store uses:
 ```
 
 with restrictive filesystem permissions.
+
+When created, the credential directory uses mode `0700` and the credentials file uses mode `0600`.
 
 ---
 
@@ -1783,7 +1806,7 @@ type Session struct {
 
 `CreatedAt` records when the Session was created.
 
-`UpdatedAt` records the most recent Session update.
+`UpdatedAt` is initialized when the Session is created and refreshed by `Rename`; appending conversation messages does not currently update it.
 
 `Metadata` stores session-level information such as the display name.
 
@@ -1796,7 +1819,7 @@ type Session struct {
 ## `NewSession`
 
 ```text
-NewSession(id)
+NewSession(id string) *Session
 ```
 
 Creates a new Session with:
@@ -1816,7 +1839,7 @@ session := NewSession("project-a")
 ## `Rename`
 
 ```text
-Rename(name)
+(*Session).Rename(name string)
 ```
 
 Updates the Session display name in metadata and updates `UpdatedAt`.
@@ -1832,10 +1855,10 @@ session.Rename("Backend Project")
 ## `Export`
 
 ```text
-Export()
+(*Session).Export() ([]byte, error)
 ```
 
-Serializes the complete Session into formatted JSON.
+Serializes the complete Session into indented JSON and returns any JSON encoding error.
 
 Example:
 
@@ -1860,10 +1883,10 @@ Messages
 ## `Import`
 
 ```text
-Import(data)
+Import(data []byte) (*Session, error)
 ```
 
-Restores a Session from serialized JSON data.
+Restores a Session from JSON. It returns a decoding error for invalid JSON and rejects an empty Session ID.
 
 Example:
 
@@ -1872,6 +1895,8 @@ session, err := Import(data)
 ```
 
 This allows Session data to be reconstructed independently from the active Session Store.
+
+`Import` rejects JSON with an empty Session ID.
 
 ---
 
@@ -1963,7 +1988,7 @@ Delete
 List
 ```
 
-The project currently provides three implementations:
+The package provides file and SQLite persistence plus in-memory implementations:
 
 ```text
 MemoryStore
@@ -1971,19 +1996,30 @@ MemoryStore
 FileSessionStore
 
 DatabaseSessionStore
+
+SessionStore
 ```
 
-All three implementations follow the same Session Store abstraction, allowing the Agent runtime to remain independent of the underlying storage mechanism.
+`MemoryStore`, `FileSessionStore`, and `DatabaseSessionStore` implement `Store`:
+
+```go
+Get(id string) (*Session, error)
+Set(session *Session) error
+Delete(id string) error
+List() []*Session
+```
+
+`SessionStore` is also an in-memory store with the same operations. `NewSessionStore() *SessionStore` creates it. `Set` rejects nil sessions and empty IDs; `Get` and `Delete` return a not-found error when the ID is absent; `List` returns the stored pointers and has no error result. The interactive CLI currently selects `FileSessionStore`; the other stores are package APIs and are not configurable from the CLI.
 
 ## Store Operations
 
 ### `Set`
 
 ```text
-Set(session)
+Set(session *Session) error
 ```
 
-Stores or updates a Session.
+Stores or updates a Session and returns an error for invalid input or storage failure. All current stores reject nil sessions and empty IDs.
 
 Example:
 
@@ -1994,10 +2030,10 @@ store.Set(session)
 ### `Get`
 
 ```text
-Get(id)
+Get(id string) (*Session, error)
 ```
 
-Retrieves a Session by its ID.
+Retrieves a Session by its ID or returns a not-found or storage error.
 
 Example:
 
@@ -2008,10 +2044,10 @@ session, err := store.Get("project-a")
 ### `Delete`
 
 ```text
-Delete(id)
+Delete(id string) error
 ```
 
-Removes a Session by its ID.
+Removes a Session by its ID or returns a not-found or storage error.
 
 Example:
 
@@ -2022,15 +2058,15 @@ store.Delete("project-a")
 ### `List`
 
 ```text
-List()
+List() []*Session
 ```
 
-Returns all available Sessions in the store.
+Returns available Sessions as `[]*Session`; it has no error return. Consequently, store implementations that encounter listing errors return an empty slice.
 
 Example:
 
 ```text
-sessions, err := store.List()
+sessions := store.List()
 ```
 
 ---
@@ -2038,6 +2074,8 @@ sessions, err := store.List()
 # In-Memory Session Store
 
 The in-memory store keeps Sessions for the lifetime of the process.
+
+`NewMemoryStore()` creates a `MemoryStore`; `NewSessionStore()` also creates an in-memory `SessionStore`.
 
 It provides:
 
@@ -2056,7 +2094,7 @@ Changes are lost when the application exits.
 Example:
 
 ```text
-store := MemoryStore
+store := NewMemoryStore()
 
 store.Set(session)
 
@@ -2073,6 +2111,8 @@ store.Delete(session.ID)
 
 The file-based store persists Sessions as JSON files.
 
+`NewFileSessionStore(dir string) *FileSessionStore` creates a store rooted at the supplied directory.
+
 It provides:
 
 ```text
@@ -2088,10 +2128,10 @@ List
 ## `Set`
 
 ```text
-Set(session)
+Set(session *Session) error
 ```
 
-Serializes the Session to JSON and persists it using an atomic file-write process.
+Rejects a nil Session or empty ID, ensures the store directory exists, serializes the Session to JSON, and persists it through a temporary file followed by a rename. It returns encoding and filesystem errors.
 
 Example:
 
@@ -2147,15 +2187,15 @@ After the data has been successfully written and the temporary file has been clo
 
 This prevents the final Session file from being replaced by partially written JSON if a write operation fails.
 
-Temporary files are also cleaned up after the operation.
+The temporary file is removed after the operation, including when writing or renaming fails.
 
 ## `Get`
 
 ```text
-Get(id)
+Get(id string) (*Session, error)
 ```
 
-Reads the Session JSON file and reconstructs the Session object.
+Reads and decodes the Session JSON file. Missing files return a session-not-found error; read and JSON decoding errors are also returned.
 
 Example:
 
@@ -2166,10 +2206,10 @@ session, err := fileStore.Get("project-a")
 ## `Delete`
 
 ```text
-Delete(id)
+Delete(id string) error
 ```
 
-Removes the Session JSON file.
+Removes the Session JSON file, returning a session-not-found error for a missing file and propagating other filesystem errors.
 
 Example:
 
@@ -2180,16 +2220,18 @@ fileStore.Delete("project-a")
 ## `List`
 
 ```text
-List()
+List() []*Session
 ```
 
-Scans the Session directory, loads valid Session files, and returns the stored Sessions.
+Scans the directory for `.json` files, skips directories and entries that fail to load, and returns the successfully loaded Sessions. If reading the directory fails, it returns an empty slice because the method has no error return.
 
 Example:
 
 ```text
-sessions, err := fileStore.List()
+sessions := fileStore.List()
 ```
+
+The internal `(*FileSessionStore).sessionPath(id string) string` helper joins the store directory with `<id>.json`. The package helper `ensureDir(dir string) error` creates the directory tree with mode `0700` and returns any filesystem error.
 
 ---
 
@@ -2200,6 +2242,9 @@ The database session store persists Sessions using SQLite.
 The implementation uses `modernc.org/sqlite`, a pure-Go SQLite implementation.
 
 SQLite is embedded and does not require a separate database server or network port.
+
+`NewDatabaseSessionStore(path)` opens the SQLite database and initializes its tables.
+Its signature is `NewDatabaseSessionStore(path string) (*DatabaseSessionStore, error)`. If initialization fails, it closes the opened database and returns the error.
 
 It provides:
 
@@ -2220,6 +2265,8 @@ sessions
 
 messages
 ```
+
+The internal `(*DatabaseSessionStore).initialize() error` enables SQLite foreign keys and creates the `sessions` and `messages` tables if they do not already exist.
 
 The `sessions` table stores:
 
@@ -2246,10 +2293,10 @@ Database writes use transactions so Session metadata and messages are persisted 
 ### `Set`
 
 ```text
-Set(session)
+Set(session *Session) error
 ```
 
-Stores or updates a Session in the SQLite database.
+Rejects a nil Session or empty ID, then writes the Session and messages in a transaction. It serializes metadata and each message's tool calls as JSON. If any transactional operation fails, the deferred rollback prevents a partial write and the error is returned.
 
 Example:
 
@@ -2273,19 +2320,17 @@ Messages
 Tool calls
 ```
 
-If the Session already exists, its stored metadata and timestamps are updated.
+If the Session already exists, its stored metadata and `updated_at` are updated; the original `created_at` is retained by the SQL upsert.
 
-The existing messages for that Session are replaced with the current Session message history.
-
-The Session and its messages are persisted within a database transaction.
+The existing messages for that Session are deleted and replaced by the supplied message history, including serialized tool calls, within the same transaction.
 
 ### `Get`
 
 ```text
-Get(id)
+Get(id string) (*Session, error)
 ```
 
-Retrieves a Session from the SQLite database using its Session ID.
+Retrieves a Session and ordered message history from SQLite using its ID. It returns a session-not-found error when absent, and propagates query, scan, or JSON decoding errors.
 
 Example:
 
@@ -2316,10 +2361,10 @@ If the Session does not exist, the store returns a Session-not-found error.
 ### `Delete`
 
 ```text
-Delete(id)
+Delete(id string) error
 ```
 
-Deletes a Session from the SQLite database using its Session ID.
+Deletes a Session from SQLite using its ID. It returns a session-not-found error if no row was deleted, or a database error otherwise.
 
 Example:
 
@@ -2334,15 +2379,15 @@ If the Session does not exist, the store returns a Session-not-found error.
 ### `List`
 
 ```text
-List()
+List() []*Session
 ```
 
-Returns all Sessions stored in the SQLite database.
+Returns all Sessions stored in the SQLite database, ordered by creation time. As this method has no error return, query, scan, row-iteration, or session-load failures result in an empty slice.
 
 Example:
 
 ```text
-sessions, err := databaseStore.List()
+sessions := databaseStore.List()
 ```
 
 Sessions are retrieved in creation order.
@@ -2598,11 +2643,12 @@ The tests cover:
 * Session persistence
 * Session metadata persistence
 * Message persistence
-* Tool-call persistence
 * Session retrieval
 * Session deletion
 * Cascading message deletion
 * Session listing
+
+The tests also exercise nil/empty-ID rejection, missing-session errors, invalid stored metadata/tool-call JSON, database query failures, and rollback after a forced message-insert failure. The implementation serializes message tool calls, but the current database tests verify messages and metadata rather than asserting a tool-call round trip. File-store tests cover invalid inputs, filesystem and JSON errors, missing sessions, and temporary-file cleanup after a successful write. CLI tests cover rollback of MCP add/remove when saving the configuration fails.
 
 Run the session tests with:
 
@@ -2626,11 +2672,33 @@ Run the application with:
 go run ./cmd
 ```
 
+To build and then run the CLI:
+
+```bash
+go build -o agent-harness ./cmd
+./agent-harness
+```
+
+The CLI requires `config/config.json` (or `../config/config.json` when launched from a child directory). Create it from the example and update its Provider settings:
+
+```bash
+cp config/config.example.json config/config.json
+```
+
+The example configures the repository MCP test server, so either build that executable first or remove the example server entry before starting the CLI.
+
 The CLI starts with the default Session:
 
 ```text
 default
 ```
+
+In `cmd/main.go`, `main()` loads configuration, connects configured MCP servers, creates the built-in tool registry and provider, restores the `default` file-backed Session, and runs the input loop. Important CLI functions are:
+
+* `loadConfig() (*configpkg.Config, error)` tries `config/config.json` and then `../config/config.json`, returning the first valid configuration or the last load error.
+* `resolveModel(configModel string) (string, string)` chooses a trimmed `OLLAMA_MODEL` environment override first, then the trimmed configured model, then the built-in default `kirito1/qwen3-coder:4b`. It also returns the source label (`environment`, `config`, or `default`).
+* `selectModel(providerClient providerpkg.Provider, configuredModel string, configuredSource string, input *bufio.Scanner, output io.Writer) (string, string, error)` returns the configured choice unchanged for providers without `LocalModelManager`. For Ollama, it lists models, returns the configured model if installed, or prompts to pull it, select an installed model, or quit. Listing, pulling, and input errors are returned.
+* `handleCommand(input string, model string, modelSource string, currentSession **sessionpkg.Session, sessionStore sessionpkg.Store, agentClient *agentpkg.Agent, appConfig *configpkg.Config, mcpRuntime *mcppkg.Runtime, registry *toolspkg.ToolRegistry, output io.Writer) CommandResult` parses and handles built-in commands, writes user-facing results to `output`, and returns `CommandNotHandled`, `CommandHandled`, or `CommandExit`. Session create/load update the active session and Agent; current-session deletion is refused. MCP add/remove update configuration and runtime together and attempt rollback when saving fails.
 
 ---
 
@@ -2639,13 +2707,13 @@ default
 | Command                              | Description                            |
 | ------------------------------------ | -------------------------------------- |
 | `help`                               | Show available commands                |
-| `model`                              | Show the currently configured model    |
+| `model`                              | Show the selected model and its source  |
 | `session`                            | Show the current session ID            |
 | `session create <id>`                | Create and activate a new session      |
 | `session list`                       | List stored sessions                   |
 | `session load <id>`                  | Load and activate a stored session     |
 | `session delete <id>`                | Delete a stored session                |
-| `clear`                              | Clear the current conversation history |
+| `clear`                              | Clear the terminal display              |
 | `mcp`                                | Show MCP command usage                 |
 | `mcp list`                           | List configured MCP servers            |
 | `mcp add <name> <command> [args...]` | Connect and persist an MCP server      |
@@ -2665,38 +2733,14 @@ help
 Example:
 
 ```text
-Available commands:
-
-help
-
-model
-
-session
-
-session create <id>
-
-session list
-
-session load <id>
-
-session delete <id>
-
-clear
-
-mcp list
-
-mcp add <name> <command> [args...]
-
-mcp remove <name>
-
-exit
+Available commands: help, exit, model, session, clear, mcp
 ```
 
 ---
 
 # `model`
 
-Displays the currently configured model.
+Displays the model selected for the current run and its source.
 
 ```text
 model
@@ -2711,8 +2755,7 @@ export OLLAMA_MODEL=your-model
 Example:
 
 ```text
-Model: llama3.1
-
+Current model : llama3.1
 Source: config
 ```
 
@@ -2810,13 +2853,13 @@ The CLI prevents deletion of the currently active session.
 
 # `clear`
 
-Clears the current conversation history:
+Clears the terminal display; it does not clear or delete conversation history:
 
 ```text
 clear
 ```
 
-This affects the active conversation but does not delete the Session itself.
+The active Session and its messages are unchanged.
 
 ---
 
@@ -2863,13 +2906,15 @@ The example configuration is available at:
 config/config.example.json
 ```
 
-The local configuration:
+The CLI loads the local configuration from `config/config.json` (or `../config/config.json` when started from a child directory). The local configuration:
 
 ```text
 config/config.json
 ```
 
 is ignored by Git because it may contain local development settings.
+
+`Config` contains a `Provider` (`name`, `model`, `base_url`, and `endpoint`) and optional `MCP.Servers` entries (`name`, `command`, and `args`). `Load(path)` reads JSON and validates it; `Save(path, config)` writes indented JSON; `Validate()` checks that the required Provider values are non-empty.
 
 ---
 
@@ -2888,10 +2933,10 @@ Validate
 ## `Load`
 
 ```text
-Load(path)
+Load(path string) (*Config, error)
 ```
 
-Reads and parses a configuration file.
+Reads the file at `path`, parses its JSON into a `Config`, and validates the required Provider fields. File-read, JSON-parse, and validation errors are returned.
 
 Example:
 
@@ -2904,10 +2949,10 @@ The configuration is parsed and validated before being returned.
 ## `Save`
 
 ```text
-Save(path, config)
+Save(path string, config *Config) error
 ```
 
-Serializes and writes a configuration to disk.
+Serializes `config` as indented JSON with a trailing newline and writes it to `path` (using mode `0644` if the file is created). Encoding and write errors are returned.
 
 Example:
 
@@ -2920,10 +2965,10 @@ The configuration is written as formatted JSON.
 ## `Validate`
 
 ```text
-Validate()
+(*Config).Validate() error
 ```
 
-Checks that required Provider configuration fields are present.
+Checks that Provider `Name`, `Model`, `BaseURL`, and `Endpoint` are non-empty. It returns the first missing-field error; it does not validate supported provider names or MCP server contents.
 
 Example:
 
@@ -2935,7 +2980,7 @@ err := config.Validate()
 
 # Configuration Validation
 
-The configuration layer validates required Provider fields:
+The configuration layer validates that these Provider fields are non-empty:
 
 ```text
 Provider Name
@@ -2947,7 +2992,7 @@ Provider Base URL
 Provider Endpoint
 ```
 
-MCP configuration is optional, allowing existing configurations without MCP servers to remain valid.
+MCP configuration is optional. `endpoint` is required by validation, but the current provider implementations construct their standard chat paths themselves (`/api/chat` for Ollama and `/chat/completions` for OpenAI); they do not use this configured field.
 
 ---
 
@@ -2955,25 +3000,23 @@ MCP configuration is optional, allowing existing configurations without MCP serv
 
 The Provider interface keeps the Agent independent from a particular model provider.
 
-The Provider layer is responsible for:
+The common `Provider` contract is:
 
-* Sending chat requests
-* Receiving model responses
-* Handling tool definitions
-* Handling tool calls
-* Listing models where supported
-* Checking model availability where supported
-* Pulling local models where supported
+```go
+Chat(request ChatRequest) (ChatResponse, error)
+```
+
+`Chat` sends the requested model, messages, and optional tool definitions, then returns response text and normalized tool calls or an error. Ollama and OpenAI validate that a model and at least one message are supplied; provider-specific transport, status, response-decoding, and no-choice errors are returned.
 
 ## Provider Operations
 
 ### `Chat`
 
 ```text
-Chat(request)
+Chat(request ChatRequest) (ChatResponse, error)
 ```
 
-Sends a provider-neutral chat request and returns the provider response.
+Sends a provider-neutral chat request and returns the provider response, including tool calls when supplied by the model.
 
 Example:
 
@@ -2984,32 +3027,24 @@ response, err := provider.Chat(request)
 ### `ListModels`
 
 ```text
-ListModels()
+(*OllamaProvider).ListModels() ([]string, error)
 ```
 
-Lists models available from providers that support local model management.
+Uses Ollama's `/api/tags` endpoint to return locally available model names. It returns errors for connection, non-200 status, invalid JSON, or empty model names.
 
 Example:
 
 ```text
-models, err := provider.ListModels()
+models, err := ollamaProvider.ListModels()
 ```
 
-### `PullModel`
-
-```text
-PullModel(name)
-```
-
-Downloads or prepares a local model where the provider supports model management.
+The separate `LocalModelManager` interface requires `ListModels() ([]string, error)` and `PullModel(name string) error`; only Ollama implements it. `(*OllamaProvider).HasModel(name string) (bool, error)` calls `ListModels()` and checks for an exact match. At startup, the CLI uses model listing and pulling to check the configured Ollama model, offer installed alternatives, or pull it. OpenAI does not implement local model management.
 
 Example:
 
 ```text
-err := provider.PullModel("llama3.1")
+err := ollamaProvider.PullModel("llama3.1")
 ```
-
-Not every Provider implements the local model management interface.
 
 ---
 
@@ -3047,6 +3082,8 @@ Pull a model:
 ollama pull llama3.1
 ```
 
+At startup, the CLI lists local models. If the configured model (or `OLLAMA_MODEL` override) is missing, it lets the user pull that model, choose an installed model, or quit.
+
 Then start Agent Harness:
 
 ```bash
@@ -3065,11 +3102,13 @@ The OpenAI provider is implemented in:
 internal/provider/openai.go
 ```
 
-The provider uses the configured API base URL and API credential.
+The provider uses the configured API base URL (default `https://api.openai.com/v1`) and API credential, then posts to `/chat/completions`.
 
 API credentials are retrieved through the credential store rather than being stored directly in the Provider configuration.
 
 This keeps credential handling separate from provider-specific request logic.
+
+The CLI looks up the provider key in `~/.agent-harness/credentials.json`. The file store's `Set`, `Get`, and `Delete` methods manage credentials; the interactive CLI has no credential-management command.
 
 ## OpenAI Operations
 
@@ -3138,10 +3177,10 @@ NewProvider
 ### `NewProvider`
 
 ```text
-NewProvider(name, baseURL, apiKey)
+NewProvider(name, baseURL, apiKey string) (Provider, error)
 ```
 
-Creates the appropriate Provider implementation based on the provider name.
+Creates `*OllamaProvider` or `*OpenAIProvider` with the supplied base URL and, for OpenAI, API key. Returns an error for unsupported provider names.
 
 Example:
 
@@ -3170,10 +3209,10 @@ RequiresAPIKey
 ### `RequiresAPIKey`
 
 ```text
-RequiresAPIKey(name)
+RequiresAPIKey(name string) bool
 ```
 
-Determines whether a provider requires a stored API credential before it can be initialized.
+Reports whether `name` requires a stored API credential before CLI initialization. It returns true for OpenAI and false for Ollama or unknown names.
 
 Example:
 
@@ -3251,25 +3290,33 @@ The loop continues until:
 * The maximum tool-call limit is reached
 * An error occurs
 
-The maximum number of tool-call iterations can be configured.
+`NewOrchestrator(agentClient *agentpkg.Agent, providerClient providerpkg.Provider, options ...OrchestratorOption) *DefaultOrchestrator` creates the orchestrator, prints a creation message, and sets the default tool-call limit to 10 before applying the options. `WithMaxToolCalls(maxToolCalls int) OrchestratorOption` changes that limit only when the supplied value is positive; zero or a negative value leaves the current limit unchanged.
 
 This prevents uncontrolled tool execution loops.
 
 ### Orchestrator Operation
 
-The main orchestration operation:
+The main conversational operation:
 
 ```text
-Run
+RunAgent(request providerpkg.ChatRequest) (AgentResponse, error)
 ```
 
-executes the Agent/provider/tool loop until a final response or execution error is produced.
+Requires at least one request message, uses only the last request message as the new user message, adds it to Agent history, and replaces request tools/messages with registry definitions and full conversation history. It then calls the Provider and executes native tool calls (including multiple calls per response) until a final response or error. Legacy JSON responses containing a `tool_call` are also executed. It returns errors for empty requests, schema/provider/tool failures, valid JSON objects that cannot be decoded as an `AgentResponse`, or exceeding the configured tool-call limit; conversation messages are appended as the loop proceeds.
 
 Example:
 
 ```text
-response, err := orchestrator.Run(ctx, input)
+response, err := orchestrator.RunAgent(request)
 ```
+
+Other `DefaultOrchestrator` methods:
+
+* `Chat(request provider.ChatRequest) (provider.ChatResponse, error)` forwards one request to the Provider and returns its response/error; it also prints a request-status line.
+* `Run(name string, args map[string]any) (any, error)` directly executes the named tool through the Agent and prints a tool-status line.
+* `AssignTool(toolCall ToolCall) (any, error)` executes the named tool with the supplied arguments and wraps execution errors with the tool name.
+* `GetToolSchemas() ([]map[string]any, error)` returns the Agent registry schemas.
+* `GetToolDefinitions() ([]provider.ToolDefinition, error)` converts registry schemas to Provider definitions; it errors if a name, description, or parameter schema is absent or invalid.
 
 ---
 
@@ -3859,6 +3906,12 @@ The integration test requires:
 * A compatible model installed
 * A model supporting the required tool-calling behavior
 
+The provider's direct Ollama integration test can be enabled separately:
+
+```bash
+OLLAMA_INTEGRATION=1 go test ./internal/provider -run TestOllamaProvider_Integration
+```
+
 ---
 
 # Formatting
@@ -4186,7 +4239,7 @@ Remote MCP Servers
 | Interactive CLI                       | Implemented |
 | CLI model command                     | Implemented |
 | CLI session display                   | Implemented |
-| CLI conversation clearing             | Implemented |
+| CLI terminal clearing                 | Implemented |
 | CLI session creation                  | Implemented |
 | CLI session listing                   | Implemented |
 | CLI session loading                   | Implemented |
