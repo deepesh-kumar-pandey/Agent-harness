@@ -41,11 +41,12 @@ func TestNewFileSessionStore(t *testing.T) {
 	}
 }
 
-// Test Set stores a session and rejects nil or empty-ID sessions.
+// Test Set stores a session and rejects invalid sessions and filesystem errors.
 func TestFileSessionStoreSet(t *testing.T) {
 	testCases := []struct {
 		name        string
 		session     *Session
+		setup       func(t *testing.T, store *FileSessionStore)
 		expectError bool
 	}{
 		{
@@ -65,6 +66,48 @@ func TestFileSessionStoreSet(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			name:    "returns error when session directory cannot be created",
+			session: &Session{ID: "test-session"},
+			setup: func(t *testing.T, store *FileSessionStore) {
+				filePath := filepath.Join(t.TempDir(), "database-file")
+
+				if err := os.WriteFile(
+					filePath,
+					[]byte("test"),
+					0600,
+				); err != nil {
+					t.Fatalf(
+						"expected test file creation to succeed, got %v",
+						err,
+					)
+				}
+
+				store.dir = filepath.Join(filePath, "sessions")
+			},
+			expectError: true,
+		},
+		{
+			name:        "returns error when temporary file cannot be created",
+			session:     &Session{ID: "invalid/session"},
+			expectError: true,
+		},
+		{
+			name:    "returns error when session file cannot be renamed",
+			session: &Session{ID: "test-session"},
+			setup: func(t *testing.T, store *FileSessionStore) {
+				if err := os.Mkdir(
+					store.sessionPath("test-session"),
+					0700,
+				); err != nil {
+					t.Fatalf(
+						"expected session directory creation to succeed, got %v",
+						err,
+					)
+				}
+			},
+			expectError: true,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -73,6 +116,10 @@ func TestFileSessionStoreSet(t *testing.T) {
 
 			dir := t.TempDir()
 			store := NewFileSessionStore(dir)
+
+			if testCase.setup != nil {
+				testCase.setup(t, store)
+			}
 
 			err := store.Set(testCase.session)
 
