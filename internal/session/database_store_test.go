@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,11 +17,40 @@ func TestNewDatabaseSessionStore(t *testing.T) {
 		{
 			name: "creates database store",
 		},
+		{
+			name: "returns error when database initialization fails",
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			dir := t.TempDir()
+
+			if testCase.name == "returns error when database initialization fails" {
+				filePath := filepath.Join(dir, "database-file")
+
+				if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+					t.Fatalf(
+						"expected test file creation to succeed, got %v",
+						err,
+					)
+				}
+
+				dbPath := filepath.Join(filePath, "sessions.db")
+
+				store, err := NewDatabaseSessionStore(dbPath)
+
+				if err == nil {
+					t.Fatal("expected error when database initialization fails, got nil")
+				}
+
+				if store != nil {
+					t.Fatal("expected database store to be nil, got non-nil")
+				}
+
+				return
+			}
+
 			dbPath := filepath.Join(dir, "sessions.db")
 
 			store, err := NewDatabaseSessionStore(dbPath)
@@ -101,6 +131,9 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 			},
 		},
 		{
+			name: "updates existing session",
+		},
+		{
 			name:        "rejects nil session",
 			session:     nil,
 			expectError: true,
@@ -111,6 +144,12 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 				ID: "",
 			},
 			expectError: true,
+		},
+		{
+			name: "returns error when database transaction fails",
+		},
+		{
+			name: "returns error when message insertion fails",
 		},
 	}
 
@@ -128,6 +167,152 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 			}
 
 			defer store.db.Close()
+
+			if testCase.name == "updates existing session" {
+				firstSession := &Session{
+					ID:        "test-session",
+					CreatedAt: time.Now().Add(-2 * time.Hour),
+					UpdatedAt: time.Now().Add(-2 * time.Hour),
+					Metadata: map[string]string{
+						"name": "Original Session",
+					},
+				}
+
+				if err := store.Set(firstSession); err != nil {
+					t.Fatalf(
+						"expected no error while setting first session, got %v",
+						err,
+					)
+				}
+
+				updatedSession := &Session{
+					ID:        "test-session",
+					CreatedAt: firstSession.CreatedAt,
+					UpdatedAt: time.Now(),
+					Metadata: map[string]string{
+						"name": "Updated Session",
+					},
+				}
+
+				if err := store.Set(updatedSession); err != nil {
+					t.Fatalf(
+						"expected no error while updating session, got %v",
+						err,
+					)
+				}
+
+				var metadata string
+
+				err := store.db.QueryRow(`
+					SELECT metadata
+					FROM sessions
+					WHERE id = ?
+				`, updatedSession.ID).Scan(&metadata)
+
+				if err != nil {
+					t.Fatalf(
+						"expected session query to succeed, got %v",
+						err,
+					)
+				}
+
+				if metadata != `{"name":"Updated Session"}` {
+					t.Fatalf(
+						"expected updated metadata, got %s",
+						metadata,
+					)
+				}
+
+				return
+			}
+
+			if testCase.name == "returns error when database transaction fails" {
+				session := &Session{
+					ID:        "transaction-error-session",
+					CreatedAt: time.Now().Add(-time.Hour),
+					UpdatedAt: time.Now(),
+					Metadata: map[string]string{
+						"name": "Transaction Error Session",
+					},
+				}
+
+				if err := store.db.Close(); err != nil {
+					t.Fatalf(
+						"expected database close to succeed, got %v",
+						err,
+					)
+				}
+
+				err := store.Set(session)
+
+				if err == nil {
+					t.Fatal("expected error when database transaction fails, got nil")
+				}
+
+				return
+			}
+
+			if testCase.name == "returns error when message insertion fails" {
+				_, err := store.db.Exec(`
+					CREATE TRIGGER fail_message_insert
+					BEFORE INSERT ON messages
+					WHEN NEW.session_id = 'message-error-session'
+					BEGIN
+						SELECT RAISE(ABORT, 'forced message insert failure');
+					END;
+				`)
+				if err != nil {
+					t.Fatalf(
+						"expected trigger creation to succeed, got %v",
+						err,
+					)
+				}
+
+				session := &Session{
+					ID:        "message-error-session",
+					CreatedAt: time.Now().Add(-time.Hour),
+					UpdatedAt: time.Now(),
+					Metadata: map[string]string{
+						"name": "Message Error Session",
+					},
+					Messages: []providerpkg.Message{
+						{
+							Role:    "user",
+							Content: "test message",
+						},
+					},
+				}
+
+				err = store.Set(session)
+
+				if err == nil {
+					t.Fatal("expected error when message insertion fails, got nil")
+				}
+
+				var sessionCount int
+
+				err = store.db.QueryRow(`
+					SELECT COUNT(*)
+					FROM sessions
+					WHERE id = ?
+				`, session.ID).Scan(&sessionCount)
+
+				if err != nil {
+					t.Fatalf(
+						"expected session query to succeed, got %v",
+						err,
+					)
+				}
+
+				if sessionCount != 0 {
+					t.Fatalf(
+						"expected transaction rollback to remove session, got %d sessions",
+						sessionCount,
+					)
+				}
+
+				return
+			}
 
 			err = store.Set(testCase.session)
 
@@ -210,6 +395,18 @@ func TestDatabaseSessionStoreGet(t *testing.T) {
 		{
 			name: "gets session and messages",
 		},
+		{
+			name: "returns error when session does not exist",
+		},
+		{
+			name: "returns error when metadata is invalid",
+		},
+		{
+			name: "returns error when tool calls are invalid",
+		},
+		{
+			name: "returns error when message query fails",
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -226,6 +423,135 @@ func TestDatabaseSessionStoreGet(t *testing.T) {
 			}
 
 			defer store.db.Close()
+
+			if testCase.name == "returns error when session does not exist" {
+				_, err := store.Get("missing-session")
+
+				if err == nil {
+					t.Fatal("expected error when getting missing session, got nil")
+				}
+
+				return
+			}
+
+			if testCase.name == "returns error when metadata is invalid" {
+				_, err := store.db.Exec(`
+					INSERT INTO sessions (
+						id,
+						created_at,
+						updated_at,
+						metadata
+					)
+					VALUES (?, ?, ?, ?)
+				`,
+					"invalid-session",
+					time.Now().Add(-time.Hour),
+					time.Now(),
+					`invalid-json`,
+				)
+
+				if err != nil {
+					t.Fatalf(
+						"expected session insert to succeed, got %v",
+						err,
+					)
+				}
+
+				_, err = store.Get("invalid-session")
+
+				if err == nil {
+					t.Fatal("expected error for invalid metadata, got nil")
+				}
+
+				return
+			}
+
+			if testCase.name == "returns error when tool calls are invalid" {
+				_, err := store.db.Exec(`
+					INSERT INTO sessions (
+						id,
+						created_at,
+						updated_at,
+						metadata
+					)
+					VALUES (?, ?, ?, ?)
+				`,
+					"invalid-tool-calls-session",
+					time.Now().Add(-time.Hour),
+					time.Now(),
+					`{}`,
+				)
+
+				if err != nil {
+					t.Fatalf(
+						"expected session insert to succeed, got %v",
+						err,
+					)
+				}
+
+				_, err = store.db.Exec(`
+					INSERT INTO messages (
+						session_id,
+						role,
+						content,
+						tool_calls
+					)
+					VALUES (?, ?, ?, ?)
+				`,
+					"invalid-tool-calls-session",
+					"assistant",
+					"Hello",
+					`invalid-json`,
+				)
+
+				if err != nil {
+					t.Fatalf(
+						"expected message insert to succeed, got %v",
+						err,
+					)
+				}
+
+				_, err = store.Get("invalid-tool-calls-session")
+
+				if err == nil {
+					t.Fatal("expected error for invalid tool calls, got nil")
+				}
+
+				return
+			}
+
+			if testCase.name == "returns error when message query fails" {
+				session := &Session{
+					ID:        "query-error-session",
+					CreatedAt: time.Now().Add(-time.Hour),
+					UpdatedAt: time.Now(),
+					Metadata: map[string]string{
+						"name": "Query Error Session",
+					},
+				}
+
+				if err := store.Set(session); err != nil {
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
+				}
+
+				if err := store.db.Close(); err != nil {
+					t.Fatalf(
+						"expected database close to succeed, got %v",
+						err,
+					)
+				}
+
+				_, err := store.Get(session.ID)
+
+				if err == nil {
+					t.Fatal("expected error when message query fails, got nil")
+				}
+
+				return
+			}
 
 			createdAt := time.Now().Add(-time.Hour)
 			updatedAt := time.Now()
@@ -323,6 +649,12 @@ func TestDatabaseSessionStoreDelete(t *testing.T) {
 		{
 			name: "deletes session and messages",
 		},
+		{
+			name: "returns error when session does not exist",
+		},
+		{
+			name: "returns error when database query fails",
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -339,6 +671,33 @@ func TestDatabaseSessionStoreDelete(t *testing.T) {
 			}
 
 			defer store.db.Close()
+
+			if testCase.name == "returns error when session does not exist" {
+				err := store.Delete("missing-session")
+
+				if err == nil {
+					t.Fatal("expected error when deleting missing session, got nil")
+				}
+
+				return
+			}
+
+			if testCase.name == "returns error when database query fails" {
+				if err := store.db.Close(); err != nil {
+					t.Fatalf(
+						"expected database close to succeed, got %v",
+						err,
+					)
+				}
+
+				err := store.Delete("test-session")
+
+				if err == nil {
+					t.Fatal("expected error when database query fails, got nil")
+				}
+
+				return
+			}
 
 			session := &Session{
 				ID:        "test-session",
@@ -411,6 +770,12 @@ func TestDatabaseSessionStoreList(t *testing.T) {
 		{
 			name: "lists all sessions",
 		},
+		{
+			name: "returns empty list when no sessions exist",
+		},
+		{
+			name: "returns empty list when database query fails",
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -427,6 +792,39 @@ func TestDatabaseSessionStoreList(t *testing.T) {
 			}
 
 			defer store.db.Close()
+
+			if testCase.name == "returns empty list when no sessions exist" {
+				sessions := store.List()
+
+				if len(sessions) != 0 {
+					t.Fatalf(
+						"expected empty session list, got %d sessions",
+						len(sessions),
+					)
+				}
+
+				return
+			}
+
+			if testCase.name == "returns empty list when database query fails" {
+				if err := store.db.Close(); err != nil {
+					t.Fatalf(
+						"expected database close to succeed, got %v",
+						err,
+					)
+				}
+
+				sessions := store.List()
+
+				if len(sessions) != 0 {
+					t.Fatalf(
+						"expected empty list, got %d sessions",
+						len(sessions),
+					)
+				}
+
+				return
+			}
 
 			firstSession := &Session{
 				ID:        "first-session",
