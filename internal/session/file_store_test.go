@@ -442,40 +442,100 @@ func TestFileSessionStoreDelete(t *testing.T) {
 	}
 }
 
-// Test List returns all stored sessions.
+// Test List returns all stored sessions and ignores directories.
 func TestFileSessionStoreList(t *testing.T) {
-	dir := t.TempDir()
-	store := NewFileSessionStore(dir)
+	testCases := []struct {
+		name  string
+		setup func(t *testing.T, store *FileSessionStore)
+	}{
+		{
+			name: "returns all stored sessions",
+			setup: func(t *testing.T, store *FileSessionStore) {
+				session1 := NewSession("session-1")
+				session2 := NewSession("session-2")
 
-	session1 := NewSession("session-1")
-	session2 := NewSession("session-2")
+				if err := store.Set(session1); err != nil {
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
+				}
 
-	if err := store.Set(session1); err != nil {
-		t.Fatalf("expected no error while setting session, got %v", err)
+				if err := store.Set(session2); err != nil {
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
+				}
+			},
+		},
+		{
+			name: "ignores directories",
+			setup: func(t *testing.T, store *FileSessionStore) {
+				if err := store.Set(NewSession("session-1")); err != nil {
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
+				}
+
+				if err := os.Mkdir(
+					filepath.Join(store.dir, "directory.json"),
+					0700,
+				); err != nil {
+					t.Fatalf(
+						"expected directory creation to succeed, got %v",
+						err,
+					)
+				}
+			},
+		},
 	}
 
-	if err := store.Set(session2); err != nil {
-		t.Fatalf("expected no error while setting session, got %v", err)
-	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := NewFileSessionStore(t.TempDir())
 
-	sessions := store.List()
+			testCase.setup(t, store)
 
-	if len(sessions) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(sessions))
-	}
+			sessions := store.List()
 
-	found := make(map[string]bool)
+			if testCase.name == "returns all stored sessions" {
+				if len(sessions) != 2 {
+					t.Fatalf("expected 2 sessions, got %d", len(sessions))
+				}
 
-	for _, session := range sessions {
-		found[session.ID] = true
-	}
+				found := make(map[string]bool)
 
-	if !found["session-1"] {
-		t.Fatal("expected session-1 in list")
-	}
+				for _, session := range sessions {
+					found[session.ID] = true
+				}
 
-	if !found["session-2"] {
-		t.Fatal("expected session-2 in list")
+				if !found["session-1"] {
+					t.Fatal("expected session-1 in list")
+				}
+
+				if !found["session-2"] {
+					t.Fatal("expected session-2 in list")
+				}
+
+				return
+			}
+
+			if len(sessions) != 1 {
+				t.Fatalf(
+					"expected 1 session, got %d",
+					len(sessions),
+				)
+			}
+
+			if sessions[0].ID != "session-1" {
+				t.Fatalf(
+					"expected session-1, got %s",
+					sessions[0].ID,
+				)
+			}
+		})
 	}
 }
 
