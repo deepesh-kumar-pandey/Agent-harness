@@ -1384,3 +1384,138 @@ func TestHandleCommandMCPRemoveRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 }
+
+// Tests loading configuration from the primary and fallback paths.
+func TestLoadConfig(t *testing.T) {
+	testCases := []struct {
+		name           string
+		primaryConfig  bool
+		fallbackConfig bool
+		expectError    bool
+		expectedModel  string
+	}{
+		{
+			name:          "Loads primary config",
+			primaryConfig: true,
+			expectedModel: "primary-model",
+		},
+		{
+			name:           "Loads fallback config",
+			fallbackConfig: true,
+			expectedModel:  "fallback-model",
+		},
+		{
+			name:        "Returns error when no config exists",
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			originalDir, err := os.Getwd()
+			if err != nil {
+				t.Fatalf("failed to get working directory: %v", err)
+			}
+
+			tempDir := t.TempDir()
+
+			if err := os.Chdir(tempDir); err != nil {
+				t.Fatalf("failed to change working directory: %v", err)
+			}
+
+			t.Cleanup(func() {
+				if err := os.Chdir(originalDir); err != nil {
+					t.Fatalf(
+						"failed to restore working directory: %v",
+						err,
+					)
+				}
+			})
+
+			if testCase.primaryConfig {
+				if err := os.MkdirAll("config", 0755); err != nil {
+					t.Fatalf(
+						"failed to create config directory: %v",
+						err,
+					)
+				}
+
+				config := &configpkg.Config{
+					Provider: configpkg.Provider{
+						Name:     "ollama",
+						Model:    testCase.expectedModel,
+						BaseURL:  "http://localhost:11434",
+						Endpoint: "/api/chat",
+					},
+				}
+
+				if err := configpkg.Save(
+					filepath.Join("config", "config.json"),
+					config,
+				); err != nil {
+					t.Fatalf(
+						"failed to create primary config: %v",
+						err,
+					)
+				}
+			}
+
+			if testCase.fallbackConfig {
+				if err := os.MkdirAll("../config", 0755); err != nil {
+					t.Fatalf(
+						"failed to create fallback config directory: %v",
+						err,
+					)
+				}
+
+				config := &configpkg.Config{
+					Provider: configpkg.Provider{
+						Name:     "ollama",
+						Model:    testCase.expectedModel,
+						BaseURL:  "http://localhost:11434",
+						Endpoint: "/api/chat",
+					},
+				}
+
+				if err := configpkg.Save(
+					filepath.Join("../config", "config.json"),
+					config,
+				); err != nil {
+					t.Fatalf(
+						"failed to create fallback config: %v",
+						err,
+					)
+				}
+			}
+
+			config, err := loadConfig()
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf(
+					"expected no error, got: %v",
+					err,
+				)
+			}
+
+			if config == nil {
+				t.Fatal("expected config, got nil")
+			}
+
+			if config.Provider.Model != testCase.expectedModel {
+				t.Fatalf(
+					"expected model %q, got %q",
+					testCase.expectedModel,
+					config.Provider.Model,
+				)
+			}
+		})
+	}
+}
