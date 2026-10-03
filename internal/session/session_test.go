@@ -297,3 +297,18 @@ func TestSessionRenameWithNilMetadata(t *testing.T) {
 		t.Fatal("expected UpdatedAt to be updated")
 	}
 }
+
+// TestSessionImportWithInvalidJSON verifies importing malformed JSON fails.
+func TestSessionImportWithInvalidJSON(t *testing.T) {
+	data := []byte(`{"id":`)
+
+	imported, err := Import(data)
+
+	if err == nil {
+		t.Fatal("expected error while importing invalid JSON")
+	}
+
+	if imported != nil {
+		t.Fatal("expected nil session when import fails")
+	}
+}

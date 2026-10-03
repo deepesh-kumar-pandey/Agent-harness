@@ -132,6 +132,7 @@ func TestFileSessionStoreSet(t *testing.T) {
 					"Error correctly returned: %s\n",
 					testCase.name,
 				)
+
 				return
 			}
 
@@ -489,7 +490,7 @@ func TestFileSessionStoreDelete(t *testing.T) {
 	}
 }
 
-// Test List returns all stored sessions and ignores directories.
+// Test List returns all stored sessions and ignores directories and non-JSON files.
 func TestFileSessionStoreList(t *testing.T) {
 	testCases := []struct {
 		name  string
@@ -537,6 +538,28 @@ func TestFileSessionStoreList(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "ignores non-json files",
+			setup: func(t *testing.T, store *FileSessionStore) {
+				if err := store.Set(NewSession("session-1")); err != nil {
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
+				}
+
+				if err := os.WriteFile(
+					filepath.Join(store.dir, "notes.txt"),
+					[]byte("not a session"),
+					0600,
+				); err != nil {
+					t.Fatalf(
+						"expected non-json file creation to succeed, got %v",
+						err,
+					)
+				}
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -547,7 +570,8 @@ func TestFileSessionStoreList(t *testing.T) {
 
 			sessions := store.List()
 
-			if testCase.name == "returns all stored sessions" {
+			switch testCase.name {
+			case "returns all stored sessions":
 				if len(sessions) != 2 {
 					t.Fatalf("expected 2 sessions, got %d", len(sessions))
 				}
@@ -566,21 +590,35 @@ func TestFileSessionStoreList(t *testing.T) {
 					t.Fatal("expected session-2 in list")
 				}
 
-				return
-			}
+			case "ignores directories":
+				if len(sessions) != 1 {
+					t.Fatalf(
+						"expected 1 session, got %d",
+						len(sessions),
+					)
+				}
 
-			if len(sessions) != 1 {
-				t.Fatalf(
-					"expected 1 session, got %d",
-					len(sessions),
-				)
-			}
+				if sessions[0].ID != "session-1" {
+					t.Fatalf(
+						"expected session-1, got %s",
+						sessions[0].ID,
+					)
+				}
 
-			if sessions[0].ID != "session-1" {
-				t.Fatalf(
-					"expected session-1, got %s",
-					sessions[0].ID,
-				)
+			case "ignores non-json files":
+				if len(sessions) != 1 {
+					t.Fatalf(
+						"expected 1 session, got %d",
+						len(sessions),
+					)
+				}
+
+				if sessions[0].ID != "session-1" {
+					t.Fatalf(
+						"expected session-1, got %s",
+						sessions[0].ID,
+					)
+				}
 			}
 		})
 	}

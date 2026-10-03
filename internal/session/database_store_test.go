@@ -176,6 +176,16 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 					Metadata: map[string]string{
 						"name": "Original Session",
 					},
+					Messages: []providerpkg.Message{
+						{
+							Role:    "user",
+							Content: "Old message",
+						},
+						{
+							Role:    "assistant",
+							Content: "Old response",
+						},
+					},
 				}
 
 				if err := store.Set(firstSession); err != nil {
@@ -191,6 +201,12 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 					UpdatedAt: time.Now(),
 					Metadata: map[string]string{
 						"name": "Updated Session",
+					},
+					Messages: []providerpkg.Message{
+						{
+							Role:    "user",
+							Content: "New message",
+						},
 					},
 				}
 
@@ -220,6 +236,51 @@ func TestDatabaseSessionStoreSet(t *testing.T) {
 					t.Fatalf(
 						"expected updated metadata, got %s",
 						metadata,
+					)
+				}
+
+				var messageCount int
+
+				err = store.db.QueryRow(`
+					SELECT COUNT(*)
+					FROM messages
+					WHERE session_id = ?
+				`, updatedSession.ID).Scan(&messageCount)
+
+				if err != nil {
+					t.Fatalf(
+						"expected message count query to succeed, got %v",
+						err,
+					)
+				}
+
+				if messageCount != 1 {
+					t.Fatalf(
+						"expected old messages to be replaced with 1 new message, got %d",
+						messageCount,
+					)
+				}
+
+				var messageContent string
+
+				err = store.db.QueryRow(`
+					SELECT content
+					FROM messages
+					WHERE session_id = ?
+					ORDER BY id
+				`, updatedSession.ID).Scan(&messageContent)
+
+				if err != nil {
+					t.Fatalf(
+						"expected message query to succeed, got %v",
+						err,
+					)
+				}
+
+				if messageContent != "New message" {
+					t.Fatalf(
+						"expected new message content, got %s",
+						messageContent,
 					)
 				}
 
@@ -396,6 +457,9 @@ func TestDatabaseSessionStoreGet(t *testing.T) {
 			name: "gets session and messages",
 		},
 		{
+			name: "gets message with tool calls",
+		},
+		{
 			name: "returns error when session does not exist",
 		},
 		{
@@ -548,6 +612,107 @@ func TestDatabaseSessionStoreGet(t *testing.T) {
 
 				if err == nil {
 					t.Fatal("expected error when message query fails, got nil")
+				}
+
+				return
+			}
+
+			if testCase.name == "gets message with tool calls" {
+				expectedSession := &Session{
+					ID:        "tool-calls-session",
+					CreatedAt: time.Now().Add(-time.Hour),
+					UpdatedAt: time.Now(),
+					Metadata: map[string]string{
+						"name": "Tool Calls Session",
+					},
+					Messages: []providerpkg.Message{
+						{
+							Role:    "assistant",
+							Content: "I will calculate that.",
+							ToolCalls: []providerpkg.ToolCall{
+								{
+									Name: "calculator",
+									Arguments: map[string]any{
+										"operation": "add",
+										"numbers":   []any{1.0, 2.0},
+									},
+								},
+							},
+						},
+					},
+				}
+
+				if err := store.Set(expectedSession); err != nil {
+					t.Fatalf(
+						"expected no error while setting session, got %v",
+						err,
+					)
+				}
+
+				actualSession, err := store.Get(expectedSession.ID)
+				if err != nil {
+					t.Fatalf(
+						"expected no error while getting session, got %v",
+						err,
+					)
+				}
+
+				if actualSession == nil {
+					t.Fatal("expected session, got nil")
+				}
+
+				if len(actualSession.Messages) != 1 {
+					t.Fatalf(
+						"expected 1 message, got %d",
+						len(actualSession.Messages),
+					)
+				}
+
+				if len(actualSession.Messages[0].ToolCalls) != 1 {
+					t.Fatalf(
+						"expected 1 tool call, got %d",
+						len(actualSession.Messages[0].ToolCalls),
+					)
+				}
+
+				toolCall := actualSession.Messages[0].ToolCalls[0]
+
+				if toolCall.Name != "calculator" {
+					t.Fatalf(
+						"expected tool name %q, got %q",
+						"calculator",
+						toolCall.Name,
+					)
+				}
+
+				if toolCall.Arguments["operation"] != "add" {
+					t.Fatalf(
+						"expected operation %q, got %v",
+						"add",
+						toolCall.Arguments["operation"],
+					)
+				}
+
+				numbers, ok := toolCall.Arguments["numbers"].([]any)
+				if !ok {
+					t.Fatalf(
+						"expected numbers to be []any, got %T",
+						toolCall.Arguments["numbers"],
+					)
+				}
+
+				if len(numbers) != 2 {
+					t.Fatalf(
+						"expected 2 numbers, got %d",
+						len(numbers),
+					)
+				}
+
+				if numbers[0] != 1.0 || numbers[1] != 2.0 {
+					t.Fatalf(
+						"expected numbers [1 2], got %v",
+						numbers,
+					)
 				}
 
 				return
