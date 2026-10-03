@@ -182,6 +182,47 @@ func TestFileStoreSet(t *testing.T) {
 	}
 }
 
+// TestFileStoreSetErrors tests error cases when storing credentials.
+func TestFileStoreSetErrors(t *testing.T) {
+	t.Run("malformed credentials file", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		store := &FileStore{
+			path: filepath.Join(tempDir, "credentials.json"),
+		}
+
+		if err := os.WriteFile(
+			store.path,
+			[]byte("{invalid"),
+			0600,
+		); err != nil {
+			t.Fatalf("failed to write malformed credentials: %v", err)
+		}
+
+		err := store.Set("openai", "test-key")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("credentials path is unreadable", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		store := &FileStore{
+			path: filepath.Join(tempDir, "credentials.json"),
+		}
+
+		if err := os.Mkdir(store.path, 0700); err != nil {
+			t.Fatalf("failed to create credentials directory: %v", err)
+		}
+
+		err := store.Set("openai", "test-key")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
 // TestFileStoreGet tests retrieving credentials from the file store.
 func TestFileStoreGet(t *testing.T) {
 	testCases := []struct {
@@ -360,4 +401,66 @@ func TestFileStoreDelete(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFileStoreDeleteErrors tests error cases when deleting credentials.
+func TestFileStoreDeleteErrors(t *testing.T) {
+	t.Run("credentials file does not exist", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		store := &FileStore{
+			path: filepath.Join(tempDir, "credentials.json"),
+		}
+
+		err := store.Delete("openai")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("malformed credentials file", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		store := &FileStore{
+			path: filepath.Join(tempDir, "credentials.json"),
+		}
+
+		if err := os.WriteFile(
+			store.path,
+			[]byte("{invalid"),
+			0600,
+		); err != nil {
+			t.Fatalf("failed to write malformed credentials: %v", err)
+		}
+
+		err := store.Delete("openai")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("credentials file cannot be written", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		store := &FileStore{
+			path: filepath.Join(tempDir, "credentials.json"),
+		}
+
+		if err := store.Set("openai", "test-key"); err != nil {
+			t.Fatalf("failed to set test credential: %v", err)
+		}
+
+		if err := os.Chmod(store.path, 0400); err != nil {
+			t.Fatalf("failed to make credentials file read-only: %v", err)
+		}
+
+		t.Cleanup(func() {
+			_ = os.Chmod(store.path, 0600)
+		})
+
+		err := store.Delete("openai")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
 }
