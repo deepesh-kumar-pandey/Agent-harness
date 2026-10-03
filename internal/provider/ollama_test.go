@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
+// Tests Chat validation for missing model, missing messages, and valid requests.
 func TestOllamaProvider_Validation(t *testing.T) {
-
 	provider := OllamaProvider{}
 
 	testCases := []struct {
@@ -53,7 +53,6 @@ func TestOllamaProvider_Validation(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-
 		t.Run(testCase.name, func(t *testing.T) {
 			testProvider := provider
 
@@ -100,6 +99,7 @@ func TestOllamaProvider_Validation(t *testing.T) {
 	}
 }
 
+// Tests conversion of Ollama tool-call responses into generic tool calls.
 func TestOllamaProvider_ToolCalls(t *testing.T) {
 	testCases := []struct {
 		name              string
@@ -241,6 +241,7 @@ func TestOllamaProvider_ToolCalls(t *testing.T) {
 	}
 }
 
+// Tests model listing and handling of invalid Ollama responses.
 func TestOllamaProvider_ListModels(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -259,6 +260,12 @@ func TestOllamaProvider_ListModels(t *testing.T) {
 		{
 			name:        "Rejects malformed response",
 			response:    `{"models":`,
+			statusCode:  http.StatusOK,
+			expectError: true,
+		},
+		{
+			name:        "Rejects empty model name",
+			response:    `{"models":[{"name":""}]}`,
 			statusCode:  http.StatusOK,
 			expectError: true,
 		},
@@ -354,6 +361,7 @@ func TestOllamaProvider_ListModels(t *testing.T) {
 	}
 }
 
+// Tests detection of existing and missing Ollama models.
 func TestOllamaProvider_HasModel(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -410,6 +418,7 @@ func TestOllamaProvider_HasModel(t *testing.T) {
 	}
 }
 
+// Tests successful and failed Ollama model pull requests.
 func TestOllamaProvider_PullModel(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -494,5 +503,138 @@ func TestOllamaProvider_PullModel(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// Tests conversion of a generic ChatRequest into an Ollama chat request.
+func TestConvertToOllamaRequest(t *testing.T) {
+	request := ChatRequest{
+		Model: "llama3.1",
+		Messages: []Message{
+			{
+				Role:    "user",
+				Content: "Calculate 5 + 7",
+				ToolCalls: []ToolCall{
+					{
+						Name: "calculator",
+						Arguments: map[string]any{
+							"operation": "add",
+							"numbers":   []any{5, 7},
+						},
+					},
+				},
+			},
+		},
+		Tools: []ToolDefinition{
+			{
+				Name:        "calculator",
+				Description: "Perform calculations",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"operation": map[string]any{
+							"type": "string",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := convertToOllamaRequest(request)
+
+	if result.Model != request.Model {
+		t.Fatalf(
+			"expected model %q, got %q",
+			request.Model,
+			result.Model,
+		)
+	}
+
+	if result.Stream {
+		t.Fatal("expected Stream to be false")
+	}
+
+	if len(result.Messages) != 1 {
+		t.Fatalf(
+			"expected 1 message, got %d",
+			len(result.Messages),
+		)
+	}
+
+	message := result.Messages[0]
+
+	if message.Role != "user" {
+		t.Fatalf(
+			"expected role user, got %q",
+			message.Role,
+		)
+	}
+
+	if message.Content != "Calculate 5 + 7" {
+		t.Fatalf(
+			"expected message content %q, got %q",
+			"Calculate 5 + 7",
+			message.Content,
+		)
+	}
+
+	if len(message.ToolCalls) != 1 {
+		t.Fatalf(
+			"expected 1 tool call, got %d",
+			len(message.ToolCalls),
+		)
+	}
+
+	if message.ToolCalls[0].Function.Name != "calculator" {
+		t.Fatalf(
+			"expected tool name calculator, got %q",
+			message.ToolCalls[0].Function.Name,
+		)
+	}
+
+	if message.ToolCalls[0].Function.Arguments["operation"] != "add" {
+		t.Fatalf(
+			"expected operation add, got %v",
+			message.ToolCalls[0].Function.Arguments["operation"],
+		)
+	}
+
+	if len(result.Tools) != 1 {
+		t.Fatalf(
+			"expected 1 tool, got %d",
+			len(result.Tools),
+		)
+	}
+
+	tool := result.Tools[0]
+
+	if tool.Type != "function" {
+		t.Fatalf(
+			"expected tool type function, got %q",
+			tool.Type,
+		)
+	}
+
+	if tool.Function.Name != "calculator" {
+		t.Fatalf(
+			"expected function name calculator, got %q",
+			tool.Function.Name,
+		)
+	}
+
+	if tool.Function.Description != "Perform calculations" {
+		t.Fatalf(
+			"expected description %q, got %q",
+			"Perform calculations",
+			tool.Function.Description,
+		)
+	}
+
+	if tool.Function.Parameters["type"] != "object" {
+		t.Fatalf(
+			"expected parameter type object, got %v",
+			tool.Function.Parameters["type"],
+		)
 	}
 }
