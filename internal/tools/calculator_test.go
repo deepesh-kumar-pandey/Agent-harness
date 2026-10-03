@@ -94,3 +94,82 @@ func TestCalculatorExecuteValidation(t *testing.T) {
 		})
 	}
 }
+
+// Tests validation errors for invalid or missing calculator arguments.
+func TestCalculatorExecuteValidationErrors(t *testing.T) {
+	calc := Calculator{}
+
+	testCases := []struct {
+		name string
+		args map[string]any
+	}{
+		{
+			name: "missing numbers",
+			args: map[string]any{
+				"operation": "add",
+			},
+		},
+		{
+			name: "invalid numbers type",
+			args: map[string]any{
+				"operation": "add",
+				"numbers":   "invalid",
+			},
+		},
+		{
+			name: "numbers contain invalid value",
+			args: map[string]any{
+				"operation": "add",
+				"numbers":   []any{1.0, "invalid"},
+			},
+		},
+		{
+			name: "empty numbers",
+			args: map[string]any{
+				"operation": "add",
+				"numbers":   []float64{},
+			},
+		},
+		{
+			name: "unsupported operation",
+			args: map[string]any{
+				"operation": "power",
+				"numbers":   []float64{2, 3},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := calc.Execute(testCase.args)
+
+			if err == nil {
+				t.Fatalf("expected error for %q, got nil", testCase.name)
+			}
+		})
+	}
+}
+
+// Tests calculator execution with numbers provided as []any.
+func TestCalculatorExecuteAnyNumbers(t *testing.T) {
+	calc := Calculator{}
+
+	args := map[string]any{
+		"operation": "add",
+		"numbers":   []any{1.0, 2.0, 3.0},
+	}
+
+	result, err := calc.Execute(args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	actual, ok := result.(float64)
+	if !ok {
+		t.Fatalf("expected float64 result, got %T", result)
+	}
+
+	if actual != 6 {
+		t.Fatalf("expected 6, got %v", actual)
+	}
+}
