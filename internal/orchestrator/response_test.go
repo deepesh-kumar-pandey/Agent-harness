@@ -25,8 +25,8 @@ func TestAgentResponse(t *testing.T) {
 		{
 			name: "Normal response",
 			input: `{
-				"content": "Hello"
-			}`,
+					"content": "Hello"
+				}`,
 			expectError:     false,
 			expectTool:      false,
 			expectedContent: "Hello",
@@ -34,15 +34,15 @@ func TestAgentResponse(t *testing.T) {
 		{
 			name: "Response with tool call",
 			input: `{
-				"content": "",
-				"tool_call": {
-					"tool": "calculator",
-					"args": {
-						"operation": "add",
-						"numbers": [10, 20]
+					"content": "",
+					"tool_call": {
+						"tool": "calculator",
+						"args": {
+							"operation": "add",
+							"numbers": [10, 20]
+						}
 					}
-				}
-			}`,
+				}`,
 			expectError:  false,
 			expectTool:   true,
 			expectedTool: "calculator",

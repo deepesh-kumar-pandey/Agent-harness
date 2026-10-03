@@ -14,8 +14,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Fake Provider
-
+// FakeProvider is a test provider used to simulate model responses and tool calls.
 type FakeProvider struct {
 	Responses   []string
 	ToolCalls   [][]providerpkg.ToolCall
@@ -23,6 +22,7 @@ type FakeProvider struct {
 	LastRequest providerpkg.ChatRequest
 }
 
+// Chat returns the next configured fake provider response.
 func (f *FakeProvider) Chat(
 	request providerpkg.ChatRequest,
 ) (providerpkg.ChatResponse, error) {
@@ -48,8 +48,7 @@ func (f *FakeProvider) Chat(
 	return response, nil
 }
 
-// Test Orchestrator Run
-
+// TestOrchestratorRun verifies that the orchestrator can execute registered tools.
 func TestOrchestratorRun(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator Run tests...")
@@ -136,8 +135,7 @@ func TestOrchestratorRun(t *testing.T) {
 	fmt.Println("Orchestrator Run tests completed!")
 }
 
-// Test Orchestrator Chat
-
+// TestOrchestratorChat verifies that chat requests are forwarded to the provider.
 func TestOrchestratorChat(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator Chat tests...")
@@ -223,8 +221,7 @@ func TestOrchestratorChat(t *testing.T) {
 	fmt.Println("Orchestrator Chat tests completed!")
 }
 
-// Test Orchestrator AssignTool
-
+// TestOrchestratorAssignTool verifies that tool calls are assigned and executed correctly.
 func TestOrchestratorAssignTool(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator AssignTool tests...")
@@ -315,8 +312,7 @@ func TestOrchestratorAssignTool(t *testing.T) {
 	fmt.Println("Orchestrator AssignTool tests completed!")
 }
 
-// Test Orchestrator AssignTool Unknown Tool
-
+// TestOrchestratorAssignToolUnknownTool verifies the error returned for an unknown tool.
 func TestOrchestratorAssignToolUnknownTool(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator unknown tool tests...")
@@ -375,8 +371,7 @@ func TestOrchestratorAssignToolUnknownTool(t *testing.T) {
 	fmt.Println("Orchestrator unknown tool tests completed!")
 }
 
-// Test Orchestrator AssignTool Execution Error
-
+// TestOrchestratorAssignToolExecutionError verifies tool execution errors are propagated.
 func TestOrchestratorAssignToolExecutionError(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator tool execution error tests...")
@@ -438,8 +433,7 @@ func TestOrchestratorAssignToolExecutionError(t *testing.T) {
 	fmt.Println("Orchestrator tool execution error tests completed!")
 }
 
-// Test Orchestrator RunAgent
-
+// TestOrchestratorRunAgent verifies plain responses, JSON tool calls, and invalid JSON responses.
 func TestOrchestratorRunAgent(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator RunAgent tests...")
@@ -576,8 +570,7 @@ func TestOrchestratorRunAgent(t *testing.T) {
 	fmt.Println("Orchestrator RunAgent tests completed!")
 }
 
-// Test Orchestrator Native Tool Call
-
+// TestOrchestratorRunAgentNativeToolCall verifies native provider tool calls.
 func TestOrchestratorRunAgentNativeToolCall(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator native tool-call tests...")
@@ -650,8 +643,7 @@ func TestOrchestratorRunAgentNativeToolCall(t *testing.T) {
 	fmt.Println("Orchestrator native tool-call tests completed!")
 }
 
-// Test Orchestrator Multiple Native Tool Calls
-
+// TestOrchestratorRunAgentMultipleNativeToolCalls verifies multiple native tool calls in one response.
 func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator multiple native tool-call tests...")
@@ -758,9 +750,8 @@ func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
 
 	if firstToolResult.Content != "30" {
 		t.Fatalf(
-			"expected first tool result %q, got %q",
+			"expected first tool result %q",
 			"30",
-			firstToolResult.Content,
 		)
 	}
 
@@ -776,9 +767,8 @@ func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
 
 	if secondToolResult.Content != "30" {
 		t.Fatalf(
-			"expected second tool result %q, got %q",
+			"expected second tool result %q",
 			"30",
-			secondToolResult.Content,
 		)
 	}
 
@@ -792,8 +782,7 @@ func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
 	)
 }
 
-// Test Orchestrator Multiple Native Tool Calls With Failure
-
+// TestOrchestratorRunAgentMultipleNativeToolCallsWithFailure verifies partial tool execution failure handling.
 func TestOrchestratorRunAgentMultipleNativeToolCallsWithFailure(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator multiple native tool-call failure tests...")
@@ -864,8 +853,7 @@ func TestOrchestratorRunAgentMultipleNativeToolCallsWithFailure(t *testing.T) {
 	)
 }
 
-// Test Orchestrator Max Tool Calls
-
+// TestOrchestratorMaxToolCalls verifies that the maximum tool-call limit is enforced.
 func TestOrchestratorMaxToolCalls(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator Max Tool Calls tests...")
@@ -948,8 +936,7 @@ func TestOrchestratorMaxToolCalls(t *testing.T) {
 	fmt.Println("Orchestrator Max Tool Calls tests completed!")
 }
 
-// Test Orchestrator Get Tool Schemas
-
+// TestOrchestratorGetToolSchemas verifies that tool schemas are returned correctly.
 func TestOrchestratorGetToolSchemas(t *testing.T) {
 
 	testCases := []struct {
@@ -1017,8 +1004,7 @@ func TestOrchestratorGetToolSchemas(t *testing.T) {
 	}
 }
 
-// Test Orchestrator Get Tool Definitions
-
+// TestOrchestratorGetToolDefinitions verifies that provider tool definitions are returned correctly.
 func TestOrchestratorGetToolDefinitions(t *testing.T) {
 
 	testCases := []struct {
@@ -1086,8 +1072,7 @@ func TestOrchestratorGetToolDefinitions(t *testing.T) {
 	}
 }
 
-// Test Orchestrator RunAgent Tool Definitions
-
+// TestOrchestratorRunAgentToolDefinitions verifies that RunAgent passes tool definitions to the provider.
 func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
 
 	registry := toolspkg.NewToolRegistry()
@@ -1154,8 +1139,7 @@ func TestOrchestratorRunAgentToolDefinitions(t *testing.T) {
 	}
 }
 
-// Test Orchestrator RunAgent Provider Error
-
+// TestOrchestratorRunAgentProviderError verifies that provider errors are propagated.
 func TestOrchestratorRunAgentProviderError(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator RunAgent provider error tests...")
@@ -1208,8 +1192,7 @@ func TestOrchestratorRunAgentProviderError(t *testing.T) {
 	)
 }
 
-// Test Orchestrator RunAgent Provider Exhausted
-
+// TestOrchestratorRunAgentProviderExhausted verifies provider exhaustion after a tool call.
 func TestOrchestratorRunAgentProviderExhausted(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator RunAgent provider exhaustion tests...")
@@ -1275,8 +1258,7 @@ func TestOrchestratorRunAgentProviderExhausted(t *testing.T) {
 	)
 }
 
-// Test Orchestrator Conversation History
-
+// TestOrchestratorRunAgentConversationHistory verifies that conversation history is preserved across requests.
 func TestOrchestratorRunAgentConversationHistory(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator conversation history tests...")
@@ -1400,8 +1382,7 @@ func TestOrchestratorRunAgentConversationHistory(t *testing.T) {
 	fmt.Println("Orchestrator conversation history tests completed!")
 }
 
-// Test Orchestrator MCP Tool Call
-
+// TestOrchestratorRunAgentMCPToolCall verifies execution of an MCP tool through the orchestrator.
 func TestOrchestratorRunAgentMCPToolCall(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator MCP tool-call tests...")
@@ -1569,4 +1550,43 @@ func TestOrchestratorRunAgentMCPToolCall(t *testing.T) {
 	fmt.Println(
 		"Orchestrator MCP tool-call tests completed!",
 	)
+}
+
+// TestOrchestratorRunAgentEmptyMessages verifies that RunAgent rejects requests without messages.
+func TestOrchestratorRunAgentEmptyMessages(t *testing.T) {
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{
+		Responses: []string{
+			"should not be called",
+		},
+	}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	request := providerpkg.ChatRequest{
+		Model:    "test-model",
+		Messages: []providerpkg.Message{},
+	}
+
+	_, err := testOrchestrator.RunAgent(request)
+
+	if err == nil {
+		t.Fatal("expected error for empty messages, got nil")
+	}
+
+	expectedError := "request contains no messages"
+
+	if err.Error() != expectedError {
+		t.Fatalf(
+			"expected error %q, got %q",
+			expectedError,
+			err.Error(),
+		)
+	}
 }
