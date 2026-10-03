@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -16,32 +17,64 @@ func TestLoadConfig(t *testing.T) {
 		}
 	}`
 
+	invalidJSON := `{
+		"provider": {
+			"name": "ollama",
+			"model": "llama3.1",
+	}`
+
+	invalidConfig := `{
+		"provider": {
+			"name": "ollama"
+		}
+	}`
+
+	dir := t.TempDir()
+
+	validPath := filepath.Join(dir, "config.json")
+	invalidJSONPath := filepath.Join(dir, "invalid.json")
+	invalidConfigPath := filepath.Join(dir, "invalid-config.json")
+
+	if err := os.WriteFile(validPath, []byte(validConfig), 0600); err != nil {
+		t.Fatalf("failed to create valid config: %v", err)
+	}
+
+	if err := os.WriteFile(invalidJSONPath, []byte(invalidJSON), 0600); err != nil {
+		t.Fatalf("failed to create invalid JSON config: %v", err)
+	}
+
+	if err := os.WriteFile(invalidConfigPath, []byte(invalidConfig), 0600); err != nil {
+		t.Fatalf("failed to create invalid config: %v", err)
+	}
+
 	testCases := []struct {
 		name        string
 		path        string
 		expectError bool
 	}{
 		{
-			name:        "Valid config",
-			path:        "config.json",
-			expectError: false,
+			name: "Valid config",
+			path: validPath,
 		},
 		{
 			name:        "Config file does not exist",
-			path:        "nonexistent.json",
+			path:        filepath.Join(dir, "nonexistent.json"),
+			expectError: true,
+		},
+		{
+			name:        "Invalid JSON",
+			path:        invalidJSONPath,
+			expectError: true,
+		},
+		{
+			name:        "Config fails validation",
+			path:        invalidConfigPath,
 			expectError: true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			if testCase.name == "Valid config" {
-				if err := os.WriteFile(testCase.path, []byte(validConfig), 0600); err != nil {
-					t.Fatalf("failed to create test config: %v", err)
-				}
-				defer os.Remove(testCase.path)
-			}
-
 			config, err := Load(testCase.path)
 
 			if testCase.expectError {
@@ -83,8 +116,7 @@ func TestSaveConfig(t *testing.T) {
 		},
 	}
 
-	testPath := "saved-config.json"
-	defer os.Remove(testPath)
+	testPath := filepath.Join(t.TempDir(), "saved-config.json")
 
 	if err := Save(testPath, testConfig); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -132,6 +164,26 @@ func TestSaveConfig(t *testing.T) {
 		server.Args[0] != "--port" ||
 		server.Args[1] != "8080" {
 		t.Errorf("unexpected server args: %v", server.Args)
+	}
+}
+
+// TestSaveConfigError verifies that saving to an invalid path returns an error.
+func TestSaveConfigError(t *testing.T) {
+	testConfig := &Config{
+		Provider: Provider{
+			Name:     "ollama",
+			Model:    "llama3.1",
+			BaseURL:  "http://localhost:11434",
+			Endpoint: "/api/chat",
+		},
+	}
+
+	path := filepath.Join(t.TempDir(), "missing", "config.json")
+
+	err := Save(path, testConfig)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 
