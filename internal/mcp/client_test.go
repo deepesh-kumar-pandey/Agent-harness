@@ -218,3 +218,45 @@ func TestClientListTools(t *testing.T) {
 	default:
 	}
 }
+
+// TestClientListToolsError verifies that ListTools propagates session errors.
+func TestClientListToolsError(t *testing.T) {
+	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
+
+	server := mcpsdk.NewServer(
+		&mcpsdk.Implementation{
+			Name:    "test-server",
+			Version: "0.1.0",
+		},
+		nil,
+	)
+
+	ctx := context.Background()
+
+	serverErr := make(chan error, 1)
+
+	go func() {
+		serverErr <- server.Run(ctx, serverTransport)
+	}()
+
+	client := NewClient()
+
+	session, err := client.Connect(ctx, clientTransport)
+	if err != nil {
+		t.Fatalf("expected connection to succeed, got error: %v", err)
+	}
+
+	if err := session.Close(); err != nil {
+		t.Fatalf("failed to close session: %v", err)
+	}
+
+	tools, err := client.ListTools(ctx, session)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if tools != nil {
+		t.Fatalf("expected nil tools, got %v", tools)
+	}
+}

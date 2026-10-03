@@ -288,3 +288,94 @@ func TestRegisterTools(t *testing.T) {
 
 	t.Log("MCP tools registered successfully")
 }
+
+// Tests MCP tool adapter execution errors.
+func TestToolAdapterExecuteError(t *testing.T) {
+	clientTransport, serverTransport := mcpsdk.NewInMemoryTransports()
+
+	server := mcpsdk.NewServer(
+		&mcpsdk.Implementation{
+			Name:    "test-server",
+			Version: "0.1.0",
+		},
+		nil,
+	)
+
+	mcpsdk.AddTool(
+		server,
+		&mcpsdk.Tool{
+			Name:        "error_tool",
+			Description: "A test tool that always returns an error",
+		},
+		func(
+			ctx context.Context,
+			req *mcpsdk.CallToolRequest,
+			args struct{},
+		) (*mcpsdk.CallToolResult, any, error) {
+			return &mcpsdk.CallToolResult{
+				IsError: true,
+				Content: []mcpsdk.Content{
+					&mcpsdk.TextContent{
+						Text: "MCP test error",
+					},
+				},
+			}, nil, nil
+		},
+	)
+
+	ctx := context.Background()
+
+	serverErr := make(chan error, 1)
+
+	go func() {
+		serverErr <- server.Run(ctx, serverTransport)
+	}()
+
+	client := NewClient()
+
+	session, err := client.Connect(ctx, clientTransport)
+	if err != nil {
+		t.Fatalf("expected connection to succeed, got error: %v", err)
+	}
+
+	tool := NewTool(mcpsdk.Tool{
+		Name:        "error_tool",
+		Description: "A test tool that always returns an error",
+	})
+
+	adapter := NewToolAdapter(ctx, tool, session)
+
+	result, err := adapter.Execute(map[string]any{})
+
+	if err == nil {
+		t.Fatal("expected adapter execution to return an error, got nil")
+	}
+
+	if result != nil {
+		t.Fatalf("expected nil result, got %v", result)
+	}
+
+	expectedError := `MCP tool "error_tool" returned an error`
+
+	if err.Error() != expectedError {
+		t.Fatalf(
+			"expected error %q, got %q",
+			expectedError,
+			err.Error(),
+		)
+	}
+
+	if err := session.Close(); err != nil {
+		t.Fatalf("failed to close session: %v", err)
+	}
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			t.Fatalf("server returned error: %v", err)
+		}
+	default:
+	}
+
+	t.Log("MCP tool adapter error handled successfully")
+}

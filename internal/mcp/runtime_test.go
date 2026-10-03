@@ -404,3 +404,65 @@ func TestRuntimeClose(t *testing.T) {
 		)
 	}
 }
+
+// Tests that disconnecting an MCP server preserves a replacement tool with the same name.
+func TestRuntimeDisconnectServerPreservesReplacementTool(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to determine current test file")
+	}
+
+	projectRoot := filepath.Join(filepath.Dir(currentFile), "..", "..")
+	command := filepath.Join(projectRoot, "cmd", "mcp-test-server", "mcp-test-server")
+
+	if _, err := os.Stat(command); err != nil {
+		t.Fatalf("test MCP server executable not found: %v", err)
+	}
+
+	ctx := context.Background()
+	registry := toolspkg.NewToolRegistry()
+	mcpRuntime := NewRuntime()
+
+	err := mcpRuntime.ConnectServer(
+		ctx,
+		"test-server",
+		command,
+		[]string{},
+		registry,
+	)
+	if err != nil {
+		t.Fatalf("expected server connection to succeed, got error: %v", err)
+	}
+
+	originalTool, err := registry.Get("test_tool")
+	if err != nil {
+		t.Fatalf("expected test_tool to be registered, got error: %v", err)
+	}
+
+	originalAdapter, ok := originalTool.(*ToolAdapter)
+	if !ok {
+		t.Fatalf("expected test_tool to be a *ToolAdapter, got %T", originalTool)
+	}
+
+	replacementTool := NewToolAdapter(
+		ctx,
+		originalAdapter.tool,
+		originalAdapter.session,
+	)
+
+	registry.Register(replacementTool.Name(), replacementTool)
+
+	err = mcpRuntime.DisconnectServer("test-server", registry)
+	if err != nil {
+		t.Fatalf("expected server disconnect to succeed, got error: %v", err)
+	}
+
+	registeredTool, err := registry.Get("test_tool")
+	if err != nil {
+		t.Fatalf("expected replacement tool to remain registered, got error: %v", err)
+	}
+
+	if registeredTool != replacementTool {
+		t.Fatal("expected replacement tool to remain registered")
+	}
+}
