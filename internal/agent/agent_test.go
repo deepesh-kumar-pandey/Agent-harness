@@ -487,3 +487,60 @@ func TestAgentRunMCPTool(t *testing.T) {
 		)
 	}
 }
+
+func TestAgentAddMessageSessionValidation(t *testing.T) {
+	testCases := []struct {
+		name        string
+		message     providerpkg.Message
+		expectError bool
+	}{
+		{
+			name: "rejects message with empty role",
+			message: providerpkg.Message{
+				Content: "Hello",
+			},
+			expectError: true,
+		},
+		{
+			name: "accepts message with role",
+			message: providerpkg.Message{
+				Role:    "user",
+				Content: "Hello",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := toolspkg.NewToolRegistry()
+			agent := NewAgent(registry)
+			session := sessionpkg.NewSession("test-session")
+
+			if err := agent.SetSession(session); err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			err := agent.AddMessage(testCase.message)
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			if len(session.Messages) != 1 {
+				t.Fatalf(
+					"expected 1 message in session, got %d",
+					len(session.Messages),
+				)
+			}
+		})
+	}
+}
