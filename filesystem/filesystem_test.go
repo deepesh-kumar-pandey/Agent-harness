@@ -6,7 +6,23 @@ import (
 	"testing"
 )
 
-func TestFileSystem(t *testing.T) {
+// Tests reading existing, empty, and missing files.
+func TestFileSystemRead(t *testing.T) {
+	filesystem := FileSystem{}
+	dir := t.TempDir()
+
+	existingFile := filepath.Join(dir, "test.txt")
+	emptyFile := filepath.Join(dir, "empty.txt")
+	missingFile := filepath.Join(dir, "missing.txt")
+
+	if err := os.WriteFile(existingFile, []byte("Hello, Agent Harness!"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	if err := os.WriteFile(emptyFile, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to create empty file: %v", err)
+	}
+
 	testCases := []struct {
 		name        string
 		path        string
@@ -14,54 +30,49 @@ func TestFileSystem(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "Read Existing File",
-			path:        "test.txt",
-			content:     "Hello, Agent Harness!",
-			expectError: false,
+			name:    "Read Existing File",
+			path:    existingFile,
+			content: "Hello, Agent Harness!",
 		},
 		{
-			name:        "Read Empty File",
-			path:        "empty.txt",
-			content:     "",
-			expectError: false,
+			name:    "Read Empty File",
+			path:    emptyFile,
+			content: "",
 		},
 		{
 			name:        "Read Missing File",
-			path:        "missing.txt",
-			content:     "",
+			path:        missingFile,
 			expectError: true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			if !testCase.expectError {
-				file, err := os.Create(testCase.path)
-				if err != nil {
-					t.Fatalf("failed to create test file: %v", err)
+			data, err := filesystem.Read(testCase.path)
+
+			if testCase.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
 				}
-				if _, err := file.WriteString(testCase.content); err != nil {
-					file.Close()
-					t.Fatalf("failed to write test file: %v", err)
-				}
-				if err := file.Close(); err != nil {
-					t.Fatalf("failed to close test file: %v", err)
-				}
-				defer os.Remove(testCase.path)
+				return
 			}
 
-			data, err := os.ReadFile(testCase.path)
-			if (err != nil) != testCase.expectError {
-				t.Fatalf("expected error: %v, got: %v", testCase.expectError, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if err == nil && string(data) != testCase.content {
+
+			if string(data) != testCase.content {
 				t.Errorf("expected content %q, got %q", testCase.content, data)
 			}
 		})
 	}
 }
 
+// Tests writing new files, overwriting files, and invalid paths.
 func TestFileSystemWrite(t *testing.T) {
+	filesystem := FileSystem{}
+	dir := t.TempDir()
+
 	testCases := []struct {
 		name        string
 		path        string
@@ -69,54 +80,74 @@ func TestFileSystemWrite(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "Write New File",
-			path:        "test.txt",
-			data:        []byte("Hello, Agent Harness!"),
-			expectError: false,
+			name: "Write New File",
+			path: filepath.Join(dir, "test.txt"),
+			data: []byte("Hello, Agent Harness!"),
 		},
 		{
-			name:        "Overwrite Existing File",
-			path:        "test.txt",
-			data:        []byte("New Content"),
-			expectError: false,
+			name: "Overwrite Existing File",
+			path: filepath.Join(dir, "existing.txt"),
+			data: []byte("New Content"),
 		},
 		{
 			name:        "Invalid Path",
-			path:        "/invalid/path/test.txt",
+			path:        filepath.Join(dir, "missing", "test.txt"),
 			data:        []byte("Hello"),
 			expectError: true,
 		},
 	}
 
+	if err := os.WriteFile(
+		testCases[1].path,
+		[]byte("Old Content"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to create existing file: %v", err)
+	}
+
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := os.WriteFile(testCase.path, testCase.data, 0644)
+			err := filesystem.Write(testCase.path, testCase.data)
 
-			if err != nil && !testCase.expectError {
-				t.Fatalf("expected no error, got: %v", err)
+			if testCase.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
 			}
 
-			if err == nil && testCase.expectError {
-				t.Fatalf("expected error for path %q, but got none", testCase.path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if !testCase.expectError {
-				defer os.Remove(testCase.path)
-				readData, err := os.ReadFile(testCase.path)
-				if err != nil {
-					t.Fatalf("failed to read file after write: %v", err)
-				}
-				if string(readData) != string(testCase.data) {
-					t.Errorf("expected data %q, got %q", testCase.data, readData)
-				}
+			data, err := os.ReadFile(testCase.path)
+			if err != nil {
+				t.Fatalf("failed to read written file: %v", err)
+			}
+
+			if string(data) != string(testCase.data) {
+				t.Errorf("expected data %q, got %q", testCase.data, data)
 			}
 		})
 	}
 }
 
+// Tests listing valid, empty, and missing directories.
 func TestFileSystemList(t *testing.T) {
+	filesystem := FileSystem{}
 	dir := t.TempDir()
 	emptyDir := t.TempDir()
+
+	filePath := filepath.Join(dir, "test.txt")
+	subDir := filepath.Join(dir, "subdir")
+
+	if err := os.WriteFile(filePath, []byte("hello"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
 
 	testCases := []struct {
 		name        string
@@ -124,73 +155,95 @@ func TestFileSystemList(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "Valid Directory",
-			path:        dir,
-			expectError: false,
+			name: "Valid Directory",
+			path: dir,
 		},
 		{
-			name:        "Empty Directory",
-			path:        emptyDir,
-			expectError: false,
+			name: "Empty Directory",
+			path: emptyDir,
 		},
 		{
 			name:        "Missing Directory",
-			path:        "does-not-exist",
+			path:        filepath.Join(dir, "does-not-exist"),
 			expectError: true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, err := os.ReadDir(testCase.path)
+			names, err := filesystem.List(testCase.path)
 
-			if err == nil && testCase.expectError {
-				t.Fatalf("expected error for path %q, but got none", testCase.path)
+			if testCase.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
 			}
 
-			if err != nil && !testCase.expectError {
-				t.Fatalf("expected no error, got: %v", err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if testCase.name == "Empty Directory" && len(names) != 0 {
+				t.Fatalf("expected empty directory, got %v", names)
+			}
+
+			if testCase.name == "Valid Directory" {
+				if len(names) != 2 {
+					t.Fatalf("expected 2 entries, got %d", len(names))
+				}
 			}
 		})
 	}
 }
 
+// Tests recursive file search and error handling.
 func TestFileSystemSearch(t *testing.T) {
+	filesystem := FileSystem{}
 	dir := t.TempDir()
+	nestedDir := filepath.Join(dir, "nested")
 
-	// Create test files
-	files := map[string]string{
-		"main.go":     "package main",
-		"test.go":     "package main",
-		"readme.txt":  "hello",
-		"config.json": "{}",
+	if err := os.Mkdir(nestedDir, 0755); err != nil {
+		t.Fatalf("failed to create nested directory: %v", err)
 	}
 
-	for name, content := range files {
-		path := filepath.Join(dir, name)
+	files := map[string]string{
+		filepath.Join(dir, "main.go"):           "package main",
+		filepath.Join(dir, "readme.txt"):        "hello",
+		filepath.Join(nestedDir, "test.go"):     "package main",
+		filepath.Join(nestedDir, "config.json"): "{}",
+	}
 
+	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("failed to create test file %s: %v", name, err)
+			t.Fatalf("failed to create test file %s: %v", path, err)
 		}
 	}
 
 	testCases := []struct {
-		name        string
-		path        string
-		pattern     string
-		expectError bool
+		name          string
+		path          string
+		pattern       string
+		expectedCount int
+		expectError   bool
 	}{
 		{
-			name:        "Find Go Files",
-			path:        dir,
-			pattern:     "*.go",
-			expectError: false,
+			name:          "Find Go Files",
+			path:          dir,
+			pattern:       "*.go",
+			expectedCount: 2,
 		},
 		{
-			name:        "No Matching Files",
-			path:        dir,
-			pattern:     "*.txt",
-			expectError: false,
+			name:          "Find JSON Files",
+			path:          dir,
+			pattern:       "*.json",
+			expectedCount: 1,
+		},
+		{
+			name:          "No Matching Files",
+			path:          dir,
+			pattern:       "*.md",
+			expectedCount: 0,
 		},
 		{
 			name:        "Missing Directory",
@@ -200,53 +253,46 @@ func TestFileSystemSearch(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			matches := make([]string, 0)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			matches, err := filesystem.Search(testCase.path, testCase.pattern)
 
-			entries, err := os.ReadDir(tc.path)
-			if err == nil {
-				for _, entry := range entries {
-					matched, matchErr := filepath.Match(tc.pattern, entry.Name())
-					if matchErr != nil {
-						err = matchErr
-						break
-					}
-					if matched {
-						matches = append(matches, filepath.Join(tc.path, entry.Name()))
-					}
-				}
-			}
-
-			if tc.expectError {
+			if testCase.expectError {
 				if err == nil {
-					t.Errorf("expected error, got nil")
+					t.Fatalf("expected error, got nil")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
+				t.Fatalf("unexpected error: %v", err)
 			}
 
-			t.Logf("matches: %v", matches)
+			if len(matches) != testCase.expectedCount {
+				t.Fatalf(
+					"expected %d matches, got %d: %v",
+					testCase.expectedCount,
+					len(matches),
+					matches,
+				)
+			}
 		})
 	}
 }
 
+// Tests deleting files, empty directories, and missing paths.
 func TestFileSystemDelete(t *testing.T) {
+	filesystem := FileSystem{}
 	dir := t.TempDir()
 
-	// Create a file that we will delete
 	filePath := filepath.Join(dir, "test.txt")
+	emptyDir := filepath.Join(dir, "empty")
+	missingPath := filepath.Join(dir, "does-not-exist")
 
 	if err := os.WriteFile(filePath, []byte("hello"), 0644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	// Create an empty directory that we will delete
-	emptyDir := filepath.Join(dir, "empty")
 	if err := os.Mkdir(emptyDir, 0755); err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
@@ -257,39 +303,33 @@ func TestFileSystemDelete(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "Delete File",
-			path:        filePath,
-			expectError: false,
+			name: "Delete File",
+			path: filePath,
 		},
 		{
-			name:        "Delete Empty Directory",
-			path:        emptyDir,
-			expectError: false,
+			name: "Delete Empty Directory",
+			path: emptyDir,
 		},
 		{
 			name:        "Delete Missing File",
-			path:        filepath.Join(dir, "does-not-exist.txt"),
+			path:        missingPath,
 			expectError: true,
 		},
 	}
 
-	filesystem := FileSystem{}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := filesystem.Delete(testCase.path)
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-
-			err := filesystem.Delete(tc.path)
-
-			if tc.expectError {
+			if testCase.expectError {
 				if err == nil {
-					t.Errorf("expected error, got nil")
+					t.Fatalf("expected error, got nil")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
