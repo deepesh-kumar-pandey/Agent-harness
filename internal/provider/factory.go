@@ -3,9 +3,12 @@ package provider
 import "fmt"
 
 // NewProvider constructs a Provider implementation based on the given name.
+//
 // baseURL is forwarded to the selected provider's BaseURL field.
-// apiKey is forwarded to providers that require authentication (e.g. OpenAI);
-// it is ignored for local providers such as Ollama.
+//
+// apiKey is forwarded to providers that require authentication and is
+// ignored for local providers such as Ollama.
+
 func NewProvider(name, baseURL, apiKey string) (Provider, error) {
 	switch name {
 	case "ollama":
@@ -17,18 +20,38 @@ func NewProvider(name, baseURL, apiKey string) (Provider, error) {
 			BaseURL: baseURL,
 			APIKey:  apiKey,
 		}, nil
+	case "gemini":
+		return &GeminiProvider{
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+		}, nil
+	case "anthropic":
+		return &AnthropicProvider{
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+		}, nil
+	case "mistral":
+		return &MistralProvider{
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported provider %q: supported providers are \"ollama\", \"openai\"", name)
+		return nil, fmt.Errorf(
+			"unsupported provider %q: supported providers are \"ollama\", \"openai\", \"gemini\", \"anthropic\", \"mistral\"",
+			name,
+		)
 	}
 }
 
 // RequiresAPIKey reports whether the named provider requires an API key.
+//
 // Unknown provider names return false so that unsupported providers reach
 // the factory and receive the "unsupported provider" error, not a
 // misleading "missing API key" error.
+
 func RequiresAPIKey(name string) bool {
 	switch name {
-	case "openai":
+	case "openai", "gemini", "anthropic", "mistral":
 		return true
 	default:
 		return false
