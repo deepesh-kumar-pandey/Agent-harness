@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestLoadConfig verifies that a configuration can be loaded from a JSON file.
+// TestLoadConfig verifies that configurations can be loaded from JSON files.
 func TestLoadConfig(t *testing.T) {
 	validConfig := `{
 		"provider": {
@@ -90,7 +90,39 @@ func TestLoadConfig(t *testing.T) {
 			}
 
 			if config == nil {
-				t.Errorf("expected a valid config")
+				t.Fatalf("expected a valid config")
+			}
+
+			if config.Provider.Name != "ollama" {
+				t.Errorf(
+					"expected provider name %q, got %q",
+					"ollama",
+					config.Provider.Name,
+				)
+			}
+
+			if config.Provider.Model != "llama3.1" {
+				t.Errorf(
+					"expected model %q, got %q",
+					"llama3.1",
+					config.Provider.Model,
+				)
+			}
+
+			if config.Provider.BaseURL != "http://localhost:11434" {
+				t.Errorf(
+					"expected base URL %q, got %q",
+					"http://localhost:11434",
+					config.Provider.BaseURL,
+				)
+			}
+
+			if config.Provider.Endpoint != "/api/chat" {
+				t.Errorf(
+					"expected endpoint %q, got %q",
+					"/api/chat",
+					config.Provider.Endpoint,
+				)
 			}
 		})
 	}
@@ -132,6 +164,30 @@ func TestSaveConfig(t *testing.T) {
 			"expected provider name %q, got %q",
 			testConfig.Provider.Name,
 			savedConfig.Provider.Name,
+		)
+	}
+
+	if savedConfig.Provider.Model != testConfig.Provider.Model {
+		t.Errorf(
+			"expected model %q, got %q",
+			testConfig.Provider.Model,
+			savedConfig.Provider.Model,
+		)
+	}
+
+	if savedConfig.Provider.BaseURL != testConfig.Provider.BaseURL {
+		t.Errorf(
+			"expected base URL %q, got %q",
+			testConfig.Provider.BaseURL,
+			savedConfig.Provider.BaseURL,
+		)
+	}
+
+	if savedConfig.Provider.Endpoint != testConfig.Provider.Endpoint {
+		t.Errorf(
+			"expected endpoint %q, got %q",
+			testConfig.Provider.Endpoint,
+			savedConfig.Provider.Endpoint,
 		)
 	}
 
@@ -195,13 +251,61 @@ func TestValidateConfig(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "Valid config",
+			name: "Valid Ollama config",
 			config: Config{
 				Provider: Provider{
 					Name:     "ollama",
 					Model:    "llama3.1",
 					BaseURL:  "http://localhost:11434",
 					Endpoint: "/api/chat",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid OpenAI config",
+			config: Config{
+				Provider: Provider{
+					Name:     "openai",
+					Model:    "gpt-4o",
+					BaseURL:  "https://api.openai.com/v1",
+					Endpoint: "/chat/completions",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid Gemini config",
+			config: Config{
+				Provider: Provider{
+					Name:     "gemini",
+					Model:    "gemini-2.5-flash",
+					BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
+					Endpoint: "/models/gemini-2.5-flash:generateContent",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid Anthropic config",
+			config: Config{
+				Provider: Provider{
+					Name:     "anthropic",
+					Model:    "claude-sonnet-4-5",
+					BaseURL:  "https://api.anthropic.com/v1",
+					Endpoint: "/messages",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid Mistral config",
+			config: Config{
+				Provider: Provider{
+					Name:     "mistral",
+					Model:    "mistral-large-latest",
+					BaseURL:  "https://api.mistral.ai/v1",
+					Endpoint: "/chat/completions",
 				},
 			},
 			expectError: false,
