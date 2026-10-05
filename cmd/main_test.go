@@ -77,6 +77,23 @@ func TestResolveModelUsesEnvOverride(t *testing.T) {
 	}
 }
 
+// Test that whitespace-only environment values fall back to configuration.
+func TestResolveModelIgnoresWhitespaceEnvOverride(t *testing.T) {
+	t.Setenv("OLLAMA_MODEL", "   ")
+
+	got, source := resolveModel("config-model")
+
+	if got != "config-model" || source != "config" {
+		t.Fatalf(
+			"resolveModel() = (%q, %q), want (%q, %q)",
+			got,
+			source,
+			"config-model",
+			"config",
+		)
+	}
+}
+
 // Test for resolving the model using the configuration.
 func TestResolveModelUsesConfigModel(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "")
@@ -90,6 +107,23 @@ func TestResolveModelUsesConfigModel(t *testing.T) {
 			source,
 			"config-model",
 			"config",
+		)
+	}
+}
+
+// Test that whitespace-only configuration values fall back to the default model.
+func TestResolveModelIgnoresWhitespaceConfigModel(t *testing.T) {
+	t.Setenv("OLLAMA_MODEL", "   ")
+
+	got, source := resolveModel("   ")
+
+	if got != "kirito1/qwen3-coder:4b" || source != "default" {
+		t.Fatalf(
+			"resolveModel() = (%q, %q), want (%q, %q)",
+			got,
+			source,
+			"kirito1/qwen3-coder:4b",
+			"default",
 		)
 	}
 }
@@ -1021,6 +1055,125 @@ func TestContainsModel(t *testing.T) {
 	}
 }
 
+// Test that the primary configuration path is selected when it exists.
+func TestGetConfigPathUsesPrimaryPath(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	tempDir := t.TempDir()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf("failed to restore working directory: %v", err)
+		}
+	})
+
+	if err := os.MkdirAll("config", 0755); err != nil {
+		t.Fatalf("failed to create config directory: %v", err)
+	}
+
+	configPath := filepath.Join("config", "config.json")
+
+	if err := os.WriteFile(configPath, []byte("{}"), 0644); err != nil {
+		t.Fatalf("failed to create config file: %v", err)
+	}
+
+	got, err := getConfigPath()
+	if err != nil {
+		t.Fatalf("getConfigPath() returned error: %v", err)
+	}
+
+	if got != configPath {
+		t.Fatalf(
+			"getConfigPath() = %q, expected %q",
+			got,
+			configPath,
+		)
+	}
+}
+
+// Test that the fallback configuration path is selected when the primary is absent.
+func TestGetConfigPathUsesFallbackPath(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	tempDir := t.TempDir()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf("failed to restore working directory: %v", err)
+		}
+	})
+
+	if err := os.MkdirAll("../config", 0755); err != nil {
+		t.Fatalf("failed to create fallback config directory: %v", err)
+	}
+
+	configPath := filepath.Join("../config", "config.json")
+
+	if err := os.WriteFile(configPath, []byte("{}"), 0644); err != nil {
+		t.Fatalf("failed to create fallback config file: %v", err)
+	}
+
+	got, err := getConfigPath()
+	if err != nil {
+		t.Fatalf("getConfigPath() returned error: %v", err)
+	}
+
+	if got != configPath {
+		t.Fatalf(
+			"getConfigPath() = %q, expected %q",
+			got,
+			configPath,
+		)
+	}
+}
+
+// Test that getConfigPath returns an error when no configuration exists.
+func TestGetConfigPathReturnsErrorWhenMissing(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	tempDir := t.TempDir()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf("failed to restore working directory: %v", err)
+		}
+	})
+
+	got, err := getConfigPath()
+
+	if err == nil {
+		t.Fatal("expected getConfigPath() to return an error")
+	}
+
+	if got != "" {
+		t.Fatalf(
+			"getConfigPath() = %q, expected empty path",
+			got,
+		)
+	}
+}
+
 // Test that MCP add rolls back the runtime connection when config saving fails.
 func TestHandleCommandMCPAddRollsBackOnConfigSaveFailure(t *testing.T) {
 	originalDir, err := os.Getwd()
@@ -1147,7 +1300,6 @@ func TestHandleCommandMCPAddRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 
-	// The command should report the config save failure.
 	if !strings.Contains(
 		output.String(),
 		"Failed to save config:",
@@ -1158,7 +1310,6 @@ func TestHandleCommandMCPAddRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 
-	// The failed save must roll back the MCP connection and tools.
 	if registry.Has("test_tool") {
 		t.Fatalf(
 			"expected MCP tool %q to be removed after rollback",
@@ -1175,7 +1326,6 @@ func TestHandleCommandMCPAddRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 
-	// The in-memory config must also be restored.
 	if len(appConfig.MCP.Servers) != 0 {
 		t.Fatalf(
 			"expected no MCP servers after rollback, got %d",
@@ -1339,7 +1489,6 @@ func TestHandleCommandMCPRemoveRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 
-	// The command should report the config save failure.
 	if !strings.Contains(
 		output.String(),
 		"Failed to save config:",
@@ -1350,7 +1499,6 @@ func TestHandleCommandMCPRemoveRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 
-	// The failed save must restore the MCP configuration.
 	if len(appConfig.MCP.Servers) != 1 {
 		t.Fatalf(
 			"expected 1 MCP server after rollback, got %d",
@@ -1366,7 +1514,6 @@ func TestHandleCommandMCPRemoveRollsBackOnConfigSaveFailure(t *testing.T) {
 		)
 	}
 
-	// The MCP connection and its tools must also be restored.
 	if !registry.Has("test_tool") {
 		t.Fatalf(
 			"expected MCP tool %q to be restored after rollback",
