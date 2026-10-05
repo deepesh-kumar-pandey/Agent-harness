@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestNewProvider verifies provider selection and configuration.
 func TestNewProvider(t *testing.T) {
 	testCases := []struct {
 		name             string
@@ -32,8 +33,35 @@ func TestNewProvider(t *testing.T) {
 			wantAPIKey:       "sk-test-key",
 		},
 		{
+			name:             "gemini selects GeminiProvider",
+			provName:         "gemini",
+			baseURL:          "https://generativelanguage.googleapis.com/v1beta",
+			apiKey:           "gemini-test-key",
+			wantProviderType: "gemini",
+			wantBaseURL:      "https://generativelanguage.googleapis.com/v1beta",
+			wantAPIKey:       "gemini-test-key",
+		},
+		{
+			name:             "anthropic selects AnthropicProvider",
+			provName:         "anthropic",
+			baseURL:          "https://api.anthropic.com/v1",
+			apiKey:           "anthropic-test-key",
+			wantProviderType: "anthropic",
+			wantBaseURL:      "https://api.anthropic.com/v1",
+			wantAPIKey:       "anthropic-test-key",
+		},
+		{
+			name:             "mistral selects MistralProvider",
+			provName:         "mistral",
+			baseURL:          "https://api.mistral.ai/v1",
+			apiKey:           "mistral-test-key",
+			wantProviderType: "mistral",
+			wantBaseURL:      "https://api.mistral.ai/v1",
+			wantAPIKey:       "mistral-test-key",
+		},
+		{
 			name:      "unknown provider returns error",
-			provName:  "anthropic",
+			provName:  "unknown",
 			expectErr: true,
 		},
 		{
@@ -85,11 +113,48 @@ func TestNewProvider(t *testing.T) {
 				if got.APIKey != testCase.wantAPIKey {
 					t.Errorf("APIKey: want %q, got %q", testCase.wantAPIKey, got.APIKey)
 				}
+
+			case "gemini":
+				got, ok := p.(*GeminiProvider)
+				if !ok {
+					t.Fatalf("expected *GeminiProvider, got %T", p)
+				}
+				if got.BaseURL != testCase.wantBaseURL {
+					t.Errorf("BaseURL: want %q, got %q", testCase.wantBaseURL, got.BaseURL)
+				}
+				if got.APIKey != testCase.wantAPIKey {
+					t.Errorf("APIKey: want %q, got %q", testCase.wantAPIKey, got.APIKey)
+				}
+
+			case "anthropic":
+				got, ok := p.(*AnthropicProvider)
+				if !ok {
+					t.Fatalf("expected *AnthropicProvider, got %T", p)
+				}
+				if got.BaseURL != testCase.wantBaseURL {
+					t.Errorf("BaseURL: want %q, got %q", testCase.wantBaseURL, got.BaseURL)
+				}
+				if got.APIKey != testCase.wantAPIKey {
+					t.Errorf("APIKey: want %q, got %q", testCase.wantAPIKey, got.APIKey)
+				}
+
+			case "mistral":
+				got, ok := p.(*MistralProvider)
+				if !ok {
+					t.Fatalf("expected *MistralProvider, got %T", p)
+				}
+				if got.BaseURL != testCase.wantBaseURL {
+					t.Errorf("BaseURL: want %q, got %q", testCase.wantBaseURL, got.BaseURL)
+				}
+				if got.APIKey != testCase.wantAPIKey {
+					t.Errorf("APIKey: want %q, got %q", testCase.wantAPIKey, got.APIKey)
+				}
 			}
 		})
 	}
 }
 
+// TestNewProvider_LocalModelManager verifies LocalModelManager implementations.
 func TestNewProvider_LocalModelManager(t *testing.T) {
 	testCases := []struct {
 		name         string
@@ -98,6 +163,9 @@ func TestNewProvider_LocalModelManager(t *testing.T) {
 	}{
 		{"ollama implements LocalModelManager", "ollama", true},
 		{"openai does not implement LocalModelManager", "openai", false},
+		{"gemini does not implement LocalModelManager", "gemini", false},
+		{"anthropic does not implement LocalModelManager", "anthropic", false},
+		{"mistral does not implement LocalModelManager", "mistral", false},
 	}
 
 	for _, testCase := range testCases {
@@ -115,6 +183,7 @@ func TestNewProvider_LocalModelManager(t *testing.T) {
 	}
 }
 
+// TestRequiresAPIKey verifies API key requirements for each provider.
 func TestRequiresAPIKey(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -122,6 +191,9 @@ func TestRequiresAPIKey(t *testing.T) {
 		expected bool
 	}{
 		{"openai requires an API key", "openai", true},
+		{"gemini requires an API key", "gemini", true},
+		{"anthropic requires an API key", "anthropic", true},
+		{"mistral requires an API key", "mistral", true},
 		{"ollama does not require an API key", "ollama", false},
 		{"unknown provider does not require an API key", "unknown", false},
 	}
