@@ -438,9 +438,6 @@ func TestOrchestratorRunAgent(t *testing.T) {
 
 	fmt.Println("Starting Orchestrator RunAgent tests...")
 
-	registry := toolspkg.NewToolRegistry()
-	testAgent := agentpkg.NewAgent(registry)
-
 	testCases := []struct {
 		name            string
 		responses       []string
@@ -516,6 +513,11 @@ func TestOrchestratorRunAgent(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 
 			fmt.Printf("Running test: %s\n", testCase.name)
+
+			// Create a fresh agent for each subtest so conversation
+			// history cannot leak between table-driven cases.
+			registry := toolspkg.NewToolRegistry()
+			testAgent := agentpkg.NewAgent(registry)
 
 			fakeProvider := &FakeProvider{
 				Responses: testCase.responses,
