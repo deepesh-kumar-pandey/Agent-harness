@@ -1,6 +1,6 @@
 # Agent Harness
 
-Agent Harness is a Go application and runtime for running a conversational agent that can call local tools and tools exposed by MCP servers. The interactive CLI currently supports Ollama, OpenAI, Anthropic, Google Gemini, and Mistral, keeps conversation history in file-backed sessions, and routes provider tool calls through a shared tool registry.
+Agent Harness is a Go application and runtime for running a conversational agent that can call local tools and tools exposed by MCP servers. The interactive CLI currently supports Ollama, OpenAI, Anthropic, Google Gemini, and Mistral, keeps conversation history in file-backed sessions, routes provider tool calls through a shared tool registry, and evaluates tool actions through the Jev action-evaluation layer.
 
 It provides:
 
@@ -8,6 +8,7 @@ It provides:
 * Agent orchestration
 * Conversation history
 * Native tool execution
+* Deterministic action evaluation through Jev
 * MCP integration
 * MCP server lifecycle management
 * MCP server CLI management
@@ -31,6 +32,11 @@ The project currently supports:
 * Conversation history
 * Agent orchestration
 * Native tool calling
+* Deterministic tool-action evaluation through Jev
+* Allow, Confirm, and Deny action decisions
+* Basic action validation policy
+* Shell action confirmation policy
+* Configurable Jev evaluator injection
 * Built-in calculator, shell, and filesystem tools
 * Dynamic tool registry
 * MCP client integration
@@ -80,6 +86,7 @@ Current development is focused on:
 * Improving CLI functionality
 * Improving provider behavior and compatibility
 * Increasing runtime extensibility
+* Extending deterministic action-evaluation policies
 
 The interactive CLI currently uses the file session store in `.sessions/`. The in-memory and SQLite stores are available as package implementations but are not selected by the CLI.
 
@@ -207,6 +214,8 @@ The Agent manages conversation state and provides access to the tool system.
 
 The Orchestrator coordinates communication between the Agent and the Provider.
 
+Jev evaluates tool actions before execution on the Orchestrator's `AssignTool` path.
+
 The runtime supports:
 
 * User messages
@@ -217,6 +226,7 @@ The runtime supports:
 * Configurable maximum number of tool calls
 * Provider-neutral execution
 * Session-aware conversation history
+* Deterministic action evaluation
 
 The Agent can operate using:
 
@@ -554,6 +564,330 @@ Parameter Schema
 It returns an error if the registry is nil or a registered tool or its schema is nil.
 
 The registry is shared by built-in and adapted MCP tools.
+
+---
+
+# Jev Action Evaluation
+
+Jev is the deterministic action-evaluation layer in:
+
+```text
+internal/jev/
+```
+
+Jev evaluates tool actions before they are executed through the Orchestrator's `AssignTool` path.
+
+It does not replace the Tool interface, Provider interface, or Tool Registry.
+
+The evaluation result is one of:
+
+```text
+Allow
+
+Confirm
+
+Deny
+```
+
+The current default evaluator applies policies with the following priority:
+
+```text
+Deny > Confirm > Allow
+```
+
+Conceptually:
+
+```text
+Tool Call
+
+    │
+
+    ▼
+
+Orchestrator
+
+    │
+
+    ▼
+
+Jev Evaluator
+
+    │
+
+    ├── Allow ───────► Tool Execution
+    │
+    ├── Confirm ─────► Confirmation Required Error
+    │
+    └── Deny ────────► Denied Error
+```
+
+## Action Model
+
+Implemented in:
+
+```text
+internal/jev/action.go
+```
+
+The `Action` type represents an operation that is being evaluated:
+
+```text
+Action
+
+    Tool
+    Args
+```
+
+It keeps Jev independent from the Orchestrator's `ToolCall` type.
+
+The Orchestrator maps:
+
+```text
+orchestrator.ToolCall
+```
+
+to:
+
+```text
+jev.Action
+```
+
+before evaluation.
+
+## Decision Model
+
+Implemented in:
+
+```text
+internal/jev/decision.go
+```
+
+Jev defines:
+
+```text
+Decision
+```
+
+with:
+
+```text
+Allow
+
+Confirm
+
+Deny
+```
+
+The evaluation result is:
+
+```text
+DecisionResult
+```
+
+which contains:
+
+```text
+Decision
+
+Reason
+```
+
+The reason describes why the policy produced the decision.
+
+## `Evaluator`
+
+Implemented in:
+
+```text
+internal/jev/evaluator.go
+```
+
+The evaluator abstraction is:
+
+```text
+Evaluate(action Action) DecisionResult
+```
+
+It allows the Orchestrator to depend on action evaluation without depending on a specific evaluator implementation.
+
+## `Policy`
+
+Implemented in:
+
+```text
+internal/jev/policy.go
+```
+
+The policy abstraction is:
+
+```text
+Evaluate(action Action) DecisionResult
+```
+
+Policies are individual action-evaluation rules that can be composed by an evaluator.
+
+---
+
+# Jev Policies
+
+## Basic Policy
+
+Implemented in:
+
+```text
+internal/jev/basic_policy.go
+```
+
+`BasicPolicy` performs the baseline action validation.
+
+Its current behavior is:
+
+```text
+Empty Tool Name
+      │
+      ▼
+    Deny
+
+Valid Tool Name
+      │
+      ▼
+    Allow
+```
+
+An action without a tool name is denied.
+
+Other actions are allowed by the basic policy.
+
+## Shell Policy
+
+Implemented in:
+
+```text
+internal/jev/shell_policy.go
+```
+
+`ShellPolicy` specifically evaluates shell actions.
+
+Its current behavior is:
+
+```text
+Non-shell action
+      │
+      ▼
+    Allow
+
+Shell action
+      │
+      ▼
+   Confirm
+```
+
+Shell actions therefore require confirmation rather than being executed directly through the Jev-protected `AssignTool` path.
+
+## Default Evaluator
+
+Implemented in:
+
+```text
+internal/jev/default_evaluator.go
+```
+
+`NewDefaultEvaluator() *DefaultEvaluator` creates the default evaluator with:
+
+```text
+BasicPolicy
+
+ShellPolicy
+```
+
+The evaluator combines policy results using:
+
+```text
+Deny > Confirm > Allow
+```
+
+This means:
+
+* Any Deny decision immediately denies the action.
+* Otherwise, a Confirm decision is preserved.
+* If no policy requires confirmation or denial, the action is allowed.
+
+The default evaluator provides the current deterministic action-evaluation behavior used by the Orchestrator.
+
+---
+
+# Jev Orchestrator Integration
+
+Jev is integrated into:
+
+```text
+internal/orchestrator/orchestrator.go
+```
+
+The Orchestrator owns an:
+
+```text
+jev.Evaluator
+```
+
+and defaults to:
+
+```text
+jev.NewDefaultEvaluator()
+```
+
+## `WithEvaluator`
+
+```text
+WithEvaluator(evaluator jev.Evaluator) OrchestratorOption
+```
+
+Replaces the default action evaluator when a non-nil evaluator is supplied.
+
+This allows callers and tests to provide a custom evaluator without changing the Orchestrator interface.
+
+Example:
+
+```text
+NewOrchestrator(
+    agentClient,
+    providerClient,
+    WithEvaluator(customEvaluator),
+)
+```
+
+## `AssignTool`
+
+```text
+AssignTool(toolCall ToolCall) (any, error)
+```
+
+Executes the named tool using the supplied arguments.
+
+Before execution, the Orchestrator converts the `ToolCall` into a Jev `Action` and evaluates it.
+
+The resulting decision is handled as follows:
+
+```text
+Allow
+  │
+  ▼
+Execute Tool
+
+Confirm
+  │
+  ▼
+Return Confirmation Error
+
+Deny
+  │
+  ▼
+Return Denied Error
+```
+
+Execution errors are wrapped with the tool name.
+
+Jev is currently integrated into `AssignTool`. The direct `Run(name, args)` method remains a separate direct tool-execution path.
 
 ---
 
@@ -3397,7 +3731,7 @@ Tests:
 internal/orchestrator/orchestrator_test.go
 ```
 
-The Orchestrator coordinates the Agent execution loop.
+The Orchestrator coordinates the Agent execution loop and evaluates tool actions through Jev before execution on the `AssignTool` path.
 
 It handles:
 
@@ -3422,19 +3756,32 @@ Model Response
 
               ▼
 
-        Tool Execution
+        Jev Evaluation
 
               │
 
-              ▼
+       ┌──────┼──────┐
+       │      │      │
+       ▼      ▼      ▼
+     Allow  Confirm  Deny
 
-        Tool Result
+       │
 
-              │
+       ▼
 
-              ▼
+   Tool Execution
 
-        Model Request
+       │
+
+       ▼
+
+     Tool Result
+
+       │
+
+       ▼
+
+    Model Request
 ```
 
 The loop continues until:
@@ -3461,6 +3808,12 @@ The default maximum tool-call limit is:
 10
 ```
 
+The default action evaluator is:
+
+```text
+jev.NewDefaultEvaluator()
+```
+
 Options can modify this behavior.
 
 ## `WithMaxToolCalls`
@@ -3472,6 +3825,16 @@ WithMaxToolCalls(maxToolCalls int) OrchestratorOption
 Changes the maximum tool-call limit when the supplied value is positive.
 
 Zero or negative values leave the current limit unchanged.
+
+## `WithEvaluator`
+
+```text
+WithEvaluator(evaluator jev.Evaluator) OrchestratorOption
+```
+
+Replaces the default Jev evaluator when a non-nil evaluator is supplied.
+
+This allows custom action-evaluation behavior to be injected without changing the Orchestrator interface.
 
 ## `RunAgent`
 
@@ -3531,7 +3894,25 @@ It prints a tool-status line.
 AssignTool(toolCall ToolCall) (any, error)
 ```
 
-Executes the named tool using the supplied arguments.
+Evaluates and executes the named tool using the supplied arguments.
+
+The Orchestrator first converts the supplied `ToolCall` into a Jev `Action`.
+
+The Jev evaluator then returns:
+
+```text
+Allow
+
+Confirm
+
+Deny
+```
+
+An `Allow` decision executes the tool.
+
+A `Confirm` decision returns an error indicating that confirmation is required.
+
+A `Deny` decision returns an error indicating that the action was denied.
 
 Execution errors are wrapped with the tool name.
 
@@ -3571,38 +3952,59 @@ It returns errors when required name, description, or parameter schema informati
                          │ Tool Execution       │
                          └──────────┬───────────┘
                                     │
-                         ┌──────────┴───────────┐
+                                    ▼
+                         ┌──────────────────────┐
+                         │    Orchestrator      │
                          │                      │
-                         ▼                      ▼
-                ┌─────────────────┐    ┌─────────────────┐
-                │    Provider     │    │  Tool Registry  │
-                │                 │    │                 │
-                │ Ollama          │    │ Calculator      │
-                │ OpenAI           │    │ Shell           │
-                │ Anthropic        │    │ Filesystem      │
-                │ Gemini           │    │ MCP Tools       │
-                │ Mistral          │    └────────┬────────┘
-                └─────────────────┘             │
-                                      ┌─────────┴─────────┐
-                                      │                   │
-                                      ▼                   ▼
-                               Native Tools         MCP Adapters
-                                                          │
-                                                          ▼
-                                                   ┌─────────────┐
-                                                   │ MCP Runtime │
-                                                   └──────┬──────┘
-                                                          │
-                                                          ▼
-                                                   ┌─────────────┐
-                                                   │ MCP Client  │
-                                                   └──────┬──────┘
-                                                          │
-                                                          ▼
-                                                   ┌─────────────┐
-                                                   │ MCP Server  │
-                                                   └─────────────┘
+                         │ Agent / Provider     │
+                         │ Execution Loop       │
+                         └───────┬───────┬──────┘
+                                 │       │
+                    ┌────────────┘       └────────────┐
+                    ▼                                 ▼
+             ┌──────────────┐                 ┌──────────────┐
+             │   Provider   │                 │     Jev      │
+             │              │                 │  Evaluator   │
+             │ Ollama       │                 │              │
+             │ OpenAI       │                 │ Allow        │
+             │ Anthropic    │                 │ Confirm      │
+             │ Gemini       │                 │ Deny         │
+             │ Mistral      │                 └──────┬───────┘
+             └──────────────┘                        │
+                                                     ▼
+                                            ┌─────────────────┐
+                                            │  Tool Registry  │
+                                            │                 │
+                                            │ Calculator      │
+                                            │ Shell           │
+                                            │ Filesystem      │
+                                            │ MCP Tools       │
+                                            └────────┬────────┘
+                                                     │
+                                      ┌──────────────┴──────────────┐
+                                      │                             │
+                                      ▼                             ▼
+                               Native Tools                   MCP Adapters
+                                                                    │
+                                                                    ▼
+                                                             ┌─────────────┐
+                                                             │ MCP Runtime │
+                                                             └──────┬──────┘
+                                                                    │
+                                                                    ▼
+                                                             ┌─────────────┐
+                                                             │ MCP Client  │
+                                                             └──────┬──────┘
+                                                                    │
+                                                                    ▼
+                                                             ┌─────────────┐
+                                                             │ MCP Server  │
+                                                             └─────────────┘
 ```
+
+Jev is an action-evaluation boundary between the Orchestrator and tool execution.
+
+The existing Provider and Tool interfaces remain independent of Jev.
 
 ---
 
@@ -3677,6 +4079,26 @@ Model
 
        ▼
 
+   Orchestrator
+
+       │
+
+       ▼
+
+   Jev Evaluator
+
+       │
+
+       ├── Allow
+       │
+       ├── Confirm
+       │
+       └── Deny
+
+       │
+
+       ▼
+
    Tool Registry
 
        │
@@ -3716,6 +4138,8 @@ Model
       User
 ```
 
+Jev is evaluated on the Orchestrator `AssignTool` path. Direct calls through `Run()` remain a separate direct tool-execution path.
+
 ---
 
 ## MCP Tool Execution
@@ -3738,6 +4162,22 @@ Provider
  │
 
  │ Tool Call
+
+ ▼
+
+Orchestrator
+
+ │
+
+ ▼
+
+Jev Evaluator
+
+ │
+
+ ├── Allow / Confirm / Deny
+
+ │
 
  ▼
 
@@ -3917,6 +4357,18 @@ Agent-harness/
 │   │   ├── store.go
 │   │   └── store_test.go
 │   │
+│   ├── jev/
+│   │   ├── action.go
+│   │   ├── basic_policy.go
+│   │   ├── basic_policy_test.go
+│   │   ├── decision.go
+│   │   ├── default_evaluator.go
+│   │   ├── default_evaluator_test.go
+│   │   ├── evaluator.go
+│   │   ├── policy.go
+│   │   ├── shell_policy.go
+│   │   └── shell_policy_test.go
+│   │
 │   ├── mcp/
 │   │   ├── adapter.go
 │   │   ├── adapter_test.go
@@ -4024,6 +4476,36 @@ Run MCP tests:
 
 ```bash
 go test ./internal/mcp -v
+```
+
+Run Jev tests:
+
+```bash
+go test ./internal/jev -v
+```
+
+Jev tests cover:
+
+* Action and decision models
+* Basic policy
+* Shell policy
+* Default evaluator
+* Allow decisions
+* Confirm decisions
+* Deny decisions
+* Policy priority
+* Invalid actions
+* Orchestrator evaluator integration
+
+The Jev package currently has 100% statement coverage.
+
+The overall project coverage is currently approximately 85.3%.
+
+Run coverage for the entire project:
+
+```bash
+go test ./... -coverprofile=coverage.out
+go tool cover -func=coverage.out
 ```
 
 Run CLI tests:
@@ -4274,6 +4756,36 @@ All tools use the common Tool abstraction.
 
 ---
 
+## Deterministic Action Evaluation
+
+Tool actions can be evaluated independently of the model provider.
+
+Jev separates action evaluation from tool implementation:
+
+```text
+Tool Call
+
+    +
+
+Action Policies
+
+    │
+
+    ▼
+
+Allow / Confirm / Deny
+```
+
+The default evaluator currently applies:
+
+```text
+Deny > Confirm > Allow
+```
+
+This allows action-evaluation policies to evolve independently from Providers and Tools.
+
+---
+
 ## Session Independence
 
 Session storage is separated from the Agent runtime.
@@ -4309,6 +4821,8 @@ Agent
 
 Orchestration
 
+Action Evaluation
+
 Tools
 
 MCP
@@ -4317,6 +4831,8 @@ CLI
 ```
 
 Each subsystem has a focused responsibility.
+
+Jev provides the action-evaluation boundary without coupling the evaluation layer to provider-specific behavior or individual Tool implementations.
 
 ---
 
@@ -4345,6 +4861,10 @@ Additional Credential Backends
 
 Additional Session Backends
 
+Additional Action Policies
+
+More Granular Tool Policies
+
 Remote MCP Servers
 
 Additional MCP Capabilities
@@ -4371,6 +4891,16 @@ Additional MCP Capabilities
 | Session-aware Agent runtime           | Implemented |
 | Tool abstraction                      | Implemented |
 | Tool registry                         | Implemented |
+| Jev action model                      | Implemented |
+| Jev decision model                    | Implemented |
+| Jev evaluator abstraction             | Implemented |
+| Jev policy abstraction                | Implemented |
+| Jev basic policy                      | Implemented |
+| Jev shell policy                      | Implemented |
+| Jev default evaluator                 | Implemented |
+| Jev policy priority                   | Implemented |
+| Jev orchestrator integration          | Implemented |
+| Jev unit tests                        | Implemented |
 | Calculator tool                       | Implemented |
 | Shell tool                            | Implemented |
 | Filesystem tool                       | Implemented |
@@ -4545,6 +5075,24 @@ Local Model
 
  ▼
 
+Orchestrator
+
+ │
+
+ ▼
+
+Jev Evaluator
+
+ │
+
+ ▼
+
+Allow
+
+ │
+
+ ▼
+
 Tool Registry
 
  │
@@ -4606,6 +5154,24 @@ Provider
  │
 
  │ Tool Call
+
+ ▼
+
+Orchestrator
+
+ │
+
+ ▼
+
+Jev Evaluator
+
+ │
+
+ ▼
+
+Allow
+
+ │
 
  ▼
 
@@ -4891,6 +5457,10 @@ Tool Execution
 
         +
 
+Action Evaluation
+
+        +
+
 MCP
 
         +
@@ -4914,6 +5484,8 @@ The project is designed to evolve toward a more complete Agent runtime while mai
 Providers
 
 Tools
+
+Jev
 
 Sessions
 
