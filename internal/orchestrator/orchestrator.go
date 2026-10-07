@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	agentpkg "agent-harness/internal/agent"
+	jev "agent-harness/internal/jev"
 	providerpkg "agent-harness/internal/provider"
 )
 
@@ -17,6 +18,7 @@ type Orchestrator interface {
 type DefaultOrchestrator struct {
 	agentClient    *agentpkg.Agent
 	providerClient providerpkg.Provider
+	evaluator      jev.Evaluator
 	maxToolCalls   int
 }
 
@@ -26,6 +28,14 @@ func WithMaxToolCalls(maxToolCalls int) OrchestratorOption {
 	return func(orchestrator *DefaultOrchestrator) {
 		if maxToolCalls > 0 {
 			orchestrator.maxToolCalls = maxToolCalls
+		}
+	}
+}
+
+func WithEvaluator(evaluator jev.Evaluator) OrchestratorOption {
+	return func(orchestrator *DefaultOrchestrator) {
+		if evaluator != nil {
+			orchestrator.evaluator = evaluator
 		}
 	}
 }
@@ -41,6 +51,7 @@ func NewOrchestrator(
 	orchestrator := &DefaultOrchestrator{
 		agentClient:    agentClient,
 		providerClient: providerClient,
+		evaluator:      jev.NewDefaultEvaluator(),
 		maxToolCalls:   10,
 	}
 
@@ -85,6 +96,32 @@ func (o *DefaultOrchestrator) Chat(
 func (o *DefaultOrchestrator) AssignTool(
 	toolCall ToolCall,
 ) (any, error) {
+
+	action := jev.Action{
+		Tool: toolCall.Tool,
+		Args: toolCall.Args,
+	}
+
+	decision := o.evaluator.Evaluate(action)
+
+	switch decision.Decision {
+	case jev.Allow:
+		// Continue to tool execution.
+
+	case jev.Confirm:
+		return nil, fmt.Errorf(
+			"tool %q requires confirmation: %s",
+			toolCall.Tool,
+			decision.Reason,
+		)
+
+	case jev.Deny:
+		return nil, fmt.Errorf(
+			"tool %q denied: %s",
+			toolCall.Tool,
+			decision.Reason,
+		)
+	}
 
 	result, err := o.agentClient.ExecuteTool(
 		toolCall.Tool,
