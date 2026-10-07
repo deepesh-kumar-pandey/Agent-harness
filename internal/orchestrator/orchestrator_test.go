@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	agentpkg "agent-harness/internal/agent"
+	jev "agent-harness/internal/jev"
 	mcppkg "agent-harness/internal/mcp"
 	providerpkg "agent-harness/internal/provider"
 	toolspkg "agent-harness/internal/tools"
@@ -265,12 +266,20 @@ func TestOrchestratorAssignTool(t *testing.T) {
 					"args":    []string{"Hello"},
 				},
 			},
-			expectError: false,
+			expectError: true,
 		},
 		{
 			name: "Assign unknown tool",
 			toolCall: ToolCall{
 				Tool: "unknown",
+				Args: map[string]any{},
+			},
+			expectError: true,
+		},
+		{
+			name: "Deny empty tool",
+			toolCall: ToolCall{
+				Tool: "",
 				Args: map[string]any{},
 			},
 			expectError: true,
@@ -514,8 +523,6 @@ func TestOrchestratorRunAgent(t *testing.T) {
 
 			fmt.Printf("Running test: %s\n", testCase.name)
 
-			// Create a fresh agent for each subtest so conversation
-			// history cannot leak between table-driven cases.
 			registry := toolspkg.NewToolRegistry()
 			testAgent := agentpkg.NewAgent(registry)
 
@@ -752,8 +759,9 @@ func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
 
 	if firstToolResult.Content != "30" {
 		t.Fatalf(
-			"expected first tool result %q",
+			"expected first tool result %q, got %q",
 			"30",
+			firstToolResult.Content,
 		)
 	}
 
@@ -769,8 +777,9 @@ func TestOrchestratorRunAgentMultipleNativeToolCalls(t *testing.T) {
 
 	if secondToolResult.Content != "30" {
 		t.Fatalf(
-			"expected second tool result %q",
+			"expected second tool result %q, got %q",
 			"30",
+			secondToolResult.Content,
 		)
 	}
 
@@ -1237,7 +1246,7 @@ func TestOrchestratorRunAgentProviderExhausted(t *testing.T) {
 	_, err := testOrchestrator.RunAgent(request)
 
 	if err == nil {
-		t.Fatal("expected provider exhaustion error, got nil")
+		t.Fatalf("expected provider exhaustion error, got nil")
 	}
 
 	expectedError := "fake provider has no more responses"
@@ -1590,5 +1599,35 @@ func TestOrchestratorRunAgentEmptyMessages(t *testing.T) {
 			expectedError,
 			err.Error(),
 		)
+	}
+}
+
+// TestOrchestratorEvaluator verifies default and custom evaluator configuration.
+func TestOrchestratorEvaluator(t *testing.T) {
+
+	registry := toolspkg.NewToolRegistry()
+	testAgent := agentpkg.NewAgent(registry)
+
+	fakeProvider := &FakeProvider{}
+
+	testOrchestrator := NewOrchestrator(
+		testAgent,
+		fakeProvider,
+	)
+
+	if testOrchestrator.evaluator == nil {
+		t.Fatal("expected default evaluator, got nil")
+	}
+
+	customEvaluator := jev.BasicPolicy{}
+
+	testOrchestrator = NewOrchestrator(
+		testAgent,
+		fakeProvider,
+		WithEvaluator(customEvaluator),
+	)
+
+	if testOrchestrator.evaluator != customEvaluator {
+		t.Fatal("expected custom evaluator to be configured")
 	}
 }
